@@ -785,15 +785,35 @@ export const document = pgTable(
   (table) => ({
     // Primary access pattern - documents by knowledge base
     knowledgeBaseIdIdx: index('doc_kb_id_idx').on(table.knowledgeBaseId),
-    // Search by filename (for search functionality)
-    filenameIdx: index('doc_filename_idx').on(table.filename),
-    // Order by upload date (for listing documents)
-    kbUploadedAtIdx: index('doc_kb_uploaded_at_idx').on(table.knowledgeBaseId, table.uploadedAt),
+
+    // Full-text search indexes for performance
+    filenameGinIdx: index('doc_filename_gin_idx').using(
+      'gin',
+      sql`to_tsvector('english', ${table.filename})`
+    ),
+    filenameTrgmIdx: index('doc_filename_trgm_idx').using(
+      'gin',
+      sql`${table.filename} gin_trgm_ops`
+    ),
+
+    // Cursor-based pagination indexes (much faster than offset pagination)
+    cursorPaginationIdx: index('doc_cursor_pagination_idx').on(
+      table.knowledgeBaseId,
+      table.uploadedAt.desc(),
+      table.id.desc()
+    ),
+
+    // Combined index for cursor pagination with search
+    cursorSearchIdx: index('doc_cursor_search_idx')
+      .on(table.knowledgeBaseId, table.uploadedAt.desc(), table.id.desc())
+      .where(sql`${table.deletedAt} IS NULL`),
+
     // Processing status filtering
     processingStatusIdx: index('doc_processing_status_idx').on(
       table.knowledgeBaseId,
       table.processingStatus
     ),
+
     // Tag indexes for filtering
     tag1Idx: index('doc_tag1_idx').on(table.tag1),
     tag2Idx: index('doc_tag2_idx').on(table.tag2),
@@ -890,8 +910,26 @@ export const embedding = pgTable(
     // Document-level access
     docIdIdx: index('emb_doc_id_idx').on(table.documentId),
 
-    // Chunk ordering within documents
+    // Chunk ordering within documents (unique constraint)
     docChunkIdx: uniqueIndex('emb_doc_chunk_idx').on(table.documentId, table.chunkIndex),
+
+    // Cursor-based pagination indexes for chunks (much faster than offset)
+    cursorPaginationIdx: index('emb_cursor_pagination_idx').on(
+      table.documentId,
+      table.chunkIndex.asc(),
+      table.id.asc()
+    ),
+
+    // Combined index for cursor pagination with enabled filtering
+    cursorEnabledIdx: index('emb_cursor_enabled_idx').on(
+      table.documentId,
+      table.enabled,
+      table.chunkIndex.asc(),
+      table.id.asc()
+    ),
+
+    // Trigram index for partial content search (instant search as-you-type)
+    contentTrgmIdx: index('emb_content_trgm_idx').using('gin', sql`${table.content} gin_trgm_ops`),
 
     // Model-specific queries for A/B testing or migrations
     kbModelIdx: index('emb_kb_model_idx').on(table.knowledgeBaseId, table.embeddingModel),
@@ -917,7 +955,7 @@ export const embedding = pgTable(
     tag6Idx: index('emb_tag6_idx').on(table.tag6),
     tag7Idx: index('emb_tag7_idx').on(table.tag7),
 
-    // Full-text search index
+    // Full-text search index (already exists from generated column)
     contentFtsIdx: index('emb_content_fts_idx').using('gin', table.contentTsv),
 
     // Ensure embedding exists (simplified since we only support one model)

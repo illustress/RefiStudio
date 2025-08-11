@@ -150,27 +150,40 @@ export function KnowledgeBase({
     error: knowledgeBaseError,
   } = useKnowledgeBase(id)
   const {
-    documents,
+    documents: allDocuments,
     pagination,
     isLoading: isLoadingDocuments,
     error: documentsError,
     updateDocument,
     refreshDocuments,
+    loadMoreDocuments,
   } = useKnowledgeBaseDocuments(id, {
     search: searchQuery || undefined,
     limit: DOCUMENTS_PER_PAGE,
-    offset: (currentPage - 1) * DOCUMENTS_PER_PAGE,
   })
+
+  // Virtual pagination: slice documents based on current page
+  const startIndex = (currentPage - 1) * DOCUMENTS_PER_PAGE
+  const endIndex = startIndex + DOCUMENTS_PER_PAGE
+  const documents = allDocuments.slice(startIndex, endIndex)
 
   const router = useRouter()
 
   const knowledgeBaseName = knowledgeBase?.name || passedKnowledgeBaseName || 'Knowledge Base'
   const error = knowledgeBaseError || documentsError
 
-  // Pagination calculations
-  const totalPages = Math.ceil(pagination.total / pagination.limit)
-  const hasNextPage = currentPage < totalPages
+  // Pagination calculations - hybrid approach
+  const totalLoadedPages = Math.ceil(allDocuments.length / DOCUMENTS_PER_PAGE)
+  const totalPages =
+    pagination.total !== null && pagination.total !== undefined
+      ? Math.ceil(pagination.total / DOCUMENTS_PER_PAGE)
+      : totalLoadedPages + (pagination.hasMore ? 1 : 0)
+
+  const hasNextPage = currentPage < totalLoadedPages || pagination.hasMore
   const hasPrevPage = currentPage > 1
+
+  // Check if we need to load more data for the requested page
+  const needsMoreData = currentPage > totalLoadedPages && pagination.hasMore
 
   // Navigation functions
   const goToPage = useCallback(
@@ -182,17 +195,38 @@ export function KnowledgeBase({
     [totalPages]
   )
 
-  const nextPage = useCallback(() => {
-    if (hasNextPage) {
-      setCurrentPage((prev) => prev + 1)
+  const nextPage = useCallback(async () => {
+    if (!hasNextPage) return
+
+    const nextPageNum = currentPage + 1
+    const nextPageNeedsData = nextPageNum > totalLoadedPages && pagination.hasMore
+
+    if (nextPageNeedsData && loadMoreDocuments) {
+      try {
+        await loadMoreDocuments()
+      } catch (error) {
+        logger.error('Error loading more data for next page:', error)
+        return
+      }
     }
-  }, [hasNextPage])
+
+    setCurrentPage(nextPageNum)
+  }, [hasNextPage, currentPage, totalLoadedPages, pagination.hasMore, loadMoreDocuments])
 
   const prevPage = useCallback(() => {
     if (hasPrevPage) {
       setCurrentPage((prev) => prev - 1)
     }
   }, [hasPrevPage])
+
+  // Auto-load more data if the current page requires it
+  useEffect(() => {
+    if (needsMoreData && loadMoreDocuments && !isLoadingDocuments) {
+      loadMoreDocuments().catch((error) => {
+        logger.error('Error auto-loading data for current page:', error)
+      })
+    }
+  }, [needsMoreData, loadMoreDocuments, isLoadingDocuments])
 
   // Auto-refresh documents when there are processing documents
   useEffect(() => {

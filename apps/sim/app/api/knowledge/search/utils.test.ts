@@ -9,6 +9,11 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('drizzle-orm')
 vi.mock('@/lib/logs/console/logger')
 vi.mock('@/db')
+vi.mock('@/db/schema', () => ({
+  document: {},
+  chunk: {},
+  knowledgeBase: {},
+}))
 
 import { handleTagAndVectorSearch, handleTagOnlySearch, handleVectorOnlySearch } from './utils'
 

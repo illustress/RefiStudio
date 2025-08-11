@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto'
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
@@ -338,8 +338,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const url = new URL(req.url)
     const includeDisabled = url.searchParams.get('includeDisabled') === 'true'
     const search = url.searchParams.get('search')
-    const limit = Number.parseInt(url.searchParams.get('limit') || '50')
-    const offset = Number.parseInt(url.searchParams.get('offset') || '0')
+    const limitParam = url.searchParams.get('limit')
+    const limit = limitParam ? Number.parseInt(limitParam) : search ? 10000 : 50 // No limit for search, default 50 for browsing
+
+    // Cursor pagination parameters
+    const cursor = url.searchParams.get('cursor') // Upload timestamp for cursor pagination
+    const cursorId = url.searchParams.get('cursorId') // Document ID for cursor pagination
 
     // Build where conditions
     const whereConditions = [
@@ -352,23 +356,35 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       whereConditions.push(eq(document.enabled, true))
     }
 
-    // Add search condition if provided
+    // Add server-side full-text search condition (much faster than LIKE)
     if (search) {
-      whereConditions.push(
-        // Search in filename
-        sql`LOWER(${document.filename}) LIKE LOWER(${`%${search}%`})`
-      )
+      const searchConditions = [
+        // Full-text search using GIN index (very fast)
+        sql`to_tsvector('english', ${document.filename}) @@ plainto_tsquery('english', ${search})`,
+        // Trigram search for partial matches (also very fast with GIN index)
+        sql`${document.filename} ILIKE ${`%${search}%`}`,
+      ]
+      const searchCondition = or(...searchConditions)
+      if (searchCondition) {
+        whereConditions.push(searchCondition)
+      }
     }
 
-    // Get total count for pagination
-    const totalResult = await db
-      .select({ count: sql<number>`COUNT(*)` })
-      .from(document)
-      .where(and(...whereConditions))
+    // Add cursor-based pagination condition (much more efficient than OFFSET)
+    if (cursor && cursorId) {
+      const cursorConditions = [
+        // Documents uploaded before cursor timestamp
+        lt(document.uploadedAt, new Date(cursor)),
+        // Documents uploaded at same time but with ID less than cursor ID
+        and(eq(document.uploadedAt, new Date(cursor)), lt(document.id, cursorId)),
+      ]
+      const cursorCondition = or(...cursorConditions)
+      if (cursorCondition) {
+        whereConditions.push(cursorCondition)
+      }
+    }
 
-    const total = totalResult[0]?.count || 0
-    const hasMore = offset + limit < total
-
+    // Fetch one extra document to determine if there are more results
     const documents = await db
       .select({
         id: document.id,
@@ -396,23 +412,56 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       })
       .from(document)
       .where(and(...whereConditions))
-      .orderBy(desc(document.uploadedAt))
-      .limit(limit)
-      .offset(offset)
+      .orderBy(desc(document.uploadedAt), desc(document.id)) // Consistent ordering for cursor pagination
+      .limit(limit + 1) // Fetch one extra to check if there are more results
+
+    // Check if there are more results and prepare response
+    const hasMore = documents.length > limit
+    const resultDocuments = hasMore ? documents.slice(0, limit) : documents
+
+    // Prepare next cursor if there are more results
+    let nextCursor = null
+    if (hasMore && resultDocuments.length > 0) {
+      const lastDoc = resultDocuments[resultDocuments.length - 1]
+      nextCursor = {
+        cursor: lastDoc.uploadedAt.toISOString(),
+        cursorId: lastDoc.id,
+      }
+    }
+
+    // Get total count only if it's the first page (for performance)
+    let total = null
+    if (!cursor && !search) {
+      const baseConditions = [
+        eq(document.knowledgeBaseId, knowledgeBaseId),
+        isNull(document.deletedAt),
+      ]
+
+      // Filter out disabled documents unless specifically requested
+      if (!includeDisabled) {
+        baseConditions.push(eq(document.enabled, true))
+      }
+
+      const totalResult = await db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(document)
+        .where(and(...baseConditions))
+      total = totalResult[0]?.count || 0
+    }
 
     logger.info(
-      `[${requestId}] Retrieved ${documents.length} documents (${offset}-${offset + documents.length} of ${total}) for knowledge base ${knowledgeBaseId}`
+      `[${requestId}] Retrieved ${resultDocuments.length} documents${search ? ` (search: "${search}")` : ''}${total !== null ? ` of ${total} total` : ''} for knowledge base ${knowledgeBaseId}${hasMore ? ' (has more)' : ''}`
     )
 
     return NextResponse.json({
       success: true,
       data: {
-        documents,
+        documents: resultDocuments,
         pagination: {
-          total,
+          total, // null if not first page or if searching
           limit,
-          offset,
           hasMore,
+          nextCursor, // Contains cursor and cursorId for next page
         },
       },
     })

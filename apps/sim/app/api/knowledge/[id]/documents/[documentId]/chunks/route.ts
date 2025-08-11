@@ -1,5 +1,5 @@
 import crypto from 'crypto'
-import { and, asc, eq, ilike, inArray, sql } from 'drizzle-orm'
+import { and, asc, eq, gt, inArray, or, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
@@ -20,12 +20,26 @@ import { calculateCost } from '@/providers/utils'
 
 const logger = createLogger('DocumentChunksAPI')
 
-const GetChunksQuerySchema = z.object({
-  search: z.string().optional(),
-  enabled: z.enum(['true', 'false', 'all']).optional().default('all'),
-  limit: z.coerce.number().min(1).max(100).optional().default(50),
-  offset: z.coerce.number().min(0).optional().default(0),
-})
+const GetChunksQuerySchema = z
+  .object({
+    search: z.string().optional(),
+    enabled: z.enum(['true', 'false', 'all']).optional().default('all'),
+    limit: z.coerce.number().min(1).max(10000).optional(),
+    // Cursor pagination parameters
+    cursor: z.coerce.number().optional(), // chunk_index for cursor pagination
+    cursorId: z.string().optional(), // chunk ID for cursor pagination
+  })
+  .transform((data) => {
+    // For search queries without explicit limit, use a large limit to get all results
+    if (data.search && data.limit === undefined) {
+      return { ...data, limit: 10000 }
+    }
+    // For non-search queries without explicit limit, use default
+    if (!data.search && data.limit === undefined) {
+      return { ...data, limit: 50 }
+    }
+    return data
+  })
 
 const CreateChunkSchema = z.object({
   content: z.string().min(1, 'Content is required').max(10000, 'Content too long'),
@@ -98,7 +112,8 @@ export async function GET(
       search: searchParams.get('search') || undefined,
       enabled: searchParams.get('enabled') || undefined,
       limit: searchParams.get('limit') || undefined,
-      offset: searchParams.get('offset') || undefined,
+      cursor: searchParams.get('cursor') || undefined,
+      cursorId: searchParams.get('cursorId') || undefined,
     })
 
     // Build query conditions
@@ -111,12 +126,35 @@ export async function GET(
       conditions.push(eq(embedding.enabled, false))
     }
 
-    // Add search filter
+    // Add server-side full-text search filter (much faster than ILIKE)
     if (queryParams.search) {
-      conditions.push(ilike(embedding.content, `%${queryParams.search}%`))
+      const searchConditions = [
+        // Full-text search using the generated tsvector column (very fast)
+        sql`${embedding.contentTsv} @@ plainto_tsquery('english', ${queryParams.search})`,
+        // Trigram search for partial matches (also very fast with GIN index)
+        sql`${embedding.content} ILIKE ${`%${queryParams.search}%`}`,
+      ]
+      const searchCondition = or(...searchConditions)
+      if (searchCondition) {
+        conditions.push(searchCondition)
+      }
     }
 
-    // Fetch chunks
+    // Add cursor-based pagination condition (much more efficient than OFFSET)
+    if (queryParams.cursor !== undefined && queryParams.cursorId) {
+      const cursorConditions = [
+        // Chunks with higher chunk_index
+        gt(embedding.chunkIndex, queryParams.cursor),
+        // Chunks with same chunk_index but higher ID (for tie-breaking)
+        and(eq(embedding.chunkIndex, queryParams.cursor), gt(embedding.id, queryParams.cursorId)),
+      ]
+      const cursorCondition = or(...cursorConditions)
+      if (cursorCondition) {
+        conditions.push(cursorCondition)
+      }
+    }
+
+    // Fetch one extra chunk to determine if there are more results
     const chunks = await db
       .select({
         id: embedding.id,
@@ -139,28 +177,55 @@ export async function GET(
       })
       .from(embedding)
       .where(and(...conditions))
-      .orderBy(asc(embedding.chunkIndex))
-      .limit(queryParams.limit)
-      .offset(queryParams.offset)
+      .orderBy(asc(embedding.chunkIndex), asc(embedding.id)) // Consistent ordering for cursor pagination
+      .limit((queryParams.limit ?? 50) + 1) // Fetch one extra to check if there are more results
 
-    // Get total count for pagination
-    const totalCount = await db
-      .select({ count: sql`count(*)` })
-      .from(embedding)
-      .where(and(...conditions))
+    // Check if there are more results and prepare response
+    const limit = queryParams.limit ?? 50
+    const hasMore = chunks.length > limit
+    const resultChunks = hasMore ? chunks.slice(0, limit) : chunks
+
+    // Prepare next cursor if there are more results
+    let nextCursor = null
+    if (hasMore && resultChunks.length > 0) {
+      const lastChunk = resultChunks[resultChunks.length - 1]
+      nextCursor = {
+        cursor: lastChunk.chunkIndex,
+        cursorId: lastChunk.id,
+      }
+    }
+
+    // Get total count only if it's the first page (for performance)
+    let total = null
+    if (queryParams.cursor === undefined && !queryParams.search) {
+      const baseConditions = [eq(embedding.documentId, documentId)]
+
+      // Add enabled filter for total count
+      if (queryParams.enabled === 'true') {
+        baseConditions.push(eq(embedding.enabled, true))
+      } else if (queryParams.enabled === 'false') {
+        baseConditions.push(eq(embedding.enabled, false))
+      }
+
+      const totalCount = await db
+        .select({ count: sql`count(*)` })
+        .from(embedding)
+        .where(and(...baseConditions))
+      total = Number(totalCount[0]?.count || 0)
+    }
 
     logger.info(
-      `[${requestId}] Retrieved ${chunks.length} chunks for document ${documentId} in knowledge base ${knowledgeBaseId}`
+      `[${requestId}] Retrieved ${resultChunks.length} chunks${queryParams.search ? ` (search: "${queryParams.search}")` : ''}${total !== null ? ` of ${total} total` : ''} for document ${documentId}${hasMore ? ' (has more)' : ''}`
     )
 
     return NextResponse.json({
       success: true,
-      data: chunks,
+      data: resultChunks,
       pagination: {
-        total: Number(totalCount[0]?.count || 0),
+        total, // null if not first page or if searching
         limit: queryParams.limit,
-        offset: queryParams.offset,
-        hasMore: chunks.length === queryParams.limit,
+        hasMore,
+        nextCursor, // Contains cursor and cursorId for next page
       },
     })
   } catch (error) {

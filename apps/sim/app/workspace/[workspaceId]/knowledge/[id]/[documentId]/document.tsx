@@ -67,25 +67,68 @@ export function Document({
   const currentPageFromURL = Number.parseInt(searchParams.get('page') || '1', 10)
   const userPermissions = useUserPermissionsContext()
 
+  const [searchQuery, setSearchQuery] = useState('')
+  const [currentPage, setCurrentPage] = useState(currentPageFromURL)
+
   const {
-    chunks: paginatedChunks,
-    allChunks,
-    searchQuery,
-    setSearchQuery,
-    currentPage,
-    totalPages,
-    hasNextPage,
-    hasPrevPage,
-    goToPage,
-    nextPage,
-    prevPage,
+    chunks: allChunks,
+    pagination,
     isLoading: isLoadingAllChunks,
     error: chunksError,
     refreshChunks,
+    loadMoreChunks,
     updateChunk,
-  } = useDocumentChunks(knowledgeBaseId, documentId, currentPageFromURL, '', {
-    enableClientSearch: true,
+  } = useDocumentChunks(knowledgeBaseId, documentId, {
+    search: searchQuery,
+    limit: 50,
   })
+
+  // Virtual pagination: slice loaded data based on current page
+  const PAGE_SIZE = 50
+  const startIndex = (currentPage - 1) * PAGE_SIZE
+  const endIndex = startIndex + PAGE_SIZE
+  const paginatedChunks = allChunks.slice(startIndex, endIndex)
+
+  // Calculate pagination info
+  const totalPages = pagination.total
+    ? Math.ceil(pagination.total / PAGE_SIZE)
+    : Math.ceil(allChunks.length / PAGE_SIZE)
+  const hasNextPage = currentPage < totalPages || pagination.hasMore
+  const hasPrevPage = currentPage > 1
+
+  const goToPage = useCallback(
+    (page: number) => {
+      setCurrentPage(page)
+      const url = new URL(window.location.href)
+      url.searchParams.set('page', page.toString())
+      router.replace(url.pathname + url.search)
+    },
+    [router]
+  )
+
+  const nextPage = useCallback(() => {
+    if (hasNextPage) {
+      // If we need more data and haven't loaded it yet, load more
+      if (endIndex >= allChunks.length && pagination.hasMore) {
+        loadMoreChunks()
+      }
+      goToPage(currentPage + 1)
+    }
+  }, [
+    hasNextPage,
+    currentPage,
+    goToPage,
+    endIndex,
+    allChunks.length,
+    pagination.hasMore,
+    loadMoreChunks,
+  ])
+
+  const prevPage = useCallback(() => {
+    if (hasPrevPage) {
+      goToPage(currentPage - 1)
+    }
+  }, [hasPrevPage, currentPage, goToPage])
 
   const [selectedChunks, setSelectedChunks] = useState<Set<string>>(new Set())
   const [selectedChunk, setSelectedChunk] = useState<ChunkData | null>(null)
@@ -289,7 +332,7 @@ export function Document({
   }
 
   const handleToggleEnabled = async (chunkId: string) => {
-    const chunk = allChunks.find((c) => c.id === chunkId)
+    const chunk = allChunks.find((c: ChunkData) => c.id === chunkId)
     if (!chunk) return
 
     try {
@@ -321,7 +364,7 @@ export function Document({
   }
 
   const handleDeleteChunk = (chunkId: string) => {
-    const chunk = allChunks.find((c) => c.id === chunkId)
+    const chunk = allChunks.find((c: ChunkData) => c.id === chunkId)
     if (chunk) {
       setChunkToDelete(chunk)
       setIsDeleteModalOpen(true)
@@ -388,7 +431,7 @@ export function Document({
           },
           body: JSON.stringify({
             operation,
-            chunkIds: chunks.map((chunk) => chunk.id),
+            chunkIds: chunks.map((chunk: ChunkData) => chunk.id),
           }),
         }
       )
@@ -428,27 +471,27 @@ export function Document({
 
   const handleBulkEnable = async () => {
     const chunksToEnable = allChunks.filter(
-      (chunk) => selectedChunks.has(chunk.id) && !chunk.enabled
+      (chunk: ChunkData) => selectedChunks.has(chunk.id) && !chunk.enabled
     )
     await performBulkChunkOperation('enable', chunksToEnable)
   }
 
   const handleBulkDisable = async () => {
     const chunksToDisable = allChunks.filter(
-      (chunk) => selectedChunks.has(chunk.id) && chunk.enabled
+      (chunk: ChunkData) => selectedChunks.has(chunk.id) && chunk.enabled
     )
     await performBulkChunkOperation('disable', chunksToDisable)
   }
 
   const handleBulkDelete = async () => {
-    const chunksToDelete = allChunks.filter((chunk) => selectedChunks.has(chunk.id))
+    const chunksToDelete = allChunks.filter((chunk: ChunkData) => selectedChunks.has(chunk.id))
     await performBulkChunkOperation('delete', chunksToDelete)
   }
 
   // Calculate bulk operation counts
-  const selectedChunksList = allChunks.filter((chunk) => selectedChunks.has(chunk.id))
-  const enabledCount = selectedChunksList.filter((chunk) => chunk.enabled).length
-  const disabledCount = selectedChunksList.filter((chunk) => !chunk.enabled).length
+  const selectedChunksList = allChunks.filter((chunk: ChunkData) => selectedChunks.has(chunk.id))
+  const enabledCount = selectedChunksList.filter((chunk: ChunkData) => chunk.enabled).length
+  const disabledCount = selectedChunksList.filter((chunk: ChunkData) => !chunk.enabled).length
 
   const isAllSelected = paginatedChunks.length > 0 && selectedChunks.size === paginatedChunks.length
 

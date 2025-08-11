@@ -74,11 +74,16 @@ export interface ChunkData {
   updatedAt: string
 }
 
+export interface NextCursor {
+  cursor: string | number
+  cursorId: string
+}
+
 export interface ChunksPagination {
-  total: number
+  total?: number | null // null for non-first pages
   limit: number
-  offset: number
   hasMore: boolean
+  nextCursor?: NextCursor | null // for cursor-based pagination
 }
 
 export interface ChunksCache {
@@ -89,10 +94,10 @@ export interface ChunksCache {
 }
 
 export interface DocumentsPagination {
-  total: number
+  total?: number | null // null for non-first pages
   limit: number
-  offset: number
   hasMore: boolean
+  nextCursor?: NextCursor | null // for cursor-based pagination
 }
 
 export interface DocumentsCache {
@@ -120,22 +125,31 @@ interface KnowledgeStore {
   getKnowledgeBase: (id: string) => Promise<KnowledgeBaseData | null>
   getDocuments: (
     knowledgeBaseId: string,
-    options?: { search?: string; limit?: number; offset?: number }
+    options?: { search?: string; limit?: number; cursor?: NextCursor }
   ) => Promise<DocumentData[]>
   getChunks: (
     knowledgeBaseId: string,
     documentId: string,
-    options?: { search?: string; limit?: number; offset?: number }
+    options?: { search?: string; limit?: number; cursor?: NextCursor }
   ) => Promise<ChunkData[]>
   getKnowledgeBasesList: (workspaceId?: string) => Promise<KnowledgeBaseData[]>
   refreshDocuments: (
     knowledgeBaseId: string,
-    options?: { search?: string; limit?: number; offset?: number }
+    options?: { search?: string; limit?: number }
   ) => Promise<DocumentData[]>
   refreshChunks: (
     knowledgeBaseId: string,
     documentId: string,
-    options?: { search?: string; limit?: number; offset?: number }
+    options?: { search?: string; limit?: number }
+  ) => Promise<ChunkData[]>
+  loadMoreDocuments: (
+    knowledgeBaseId: string,
+    options?: { search?: string; limit?: number }
+  ) => Promise<DocumentData[]>
+  loadMoreChunks: (
+    knowledgeBaseId: string,
+    documentId: string,
+    options?: { search?: string; limit?: number }
   ) => Promise<ChunkData[]>
   updateDocument: (
     knowledgeBaseId: string,
@@ -257,13 +271,14 @@ export const useKnowledgeStore = create<KnowledgeStore>((set, get) => ({
 
   getDocuments: async (
     knowledgeBaseId: string,
-    options?: { search?: string; limit?: number; offset?: number }
+    options?: { search?: string; limit?: number; cursor?: NextCursor }
   ) => {
     const state = get()
 
-    // Return cached documents if they exist (no search-based caching since we do client-side filtering)
+    // For cursor pagination, only return cached documents if search hasn't changed
+    // and we're not using a cursor (i.e., first page request)
     const cached = state.documents[knowledgeBaseId]
-    if (cached && cached.documents.length > 0) {
+    if (cached && !options?.cursor && cached.searchQuery === options?.search) {
       return cached.documents
     }
 
@@ -277,13 +292,16 @@ export const useKnowledgeStore = create<KnowledgeStore>((set, get) => ({
         loadingDocuments: new Set([...state.loadingDocuments, knowledgeBaseId]),
       }))
 
-      // Build query parameters
+      // Build query parameters for cursor pagination
       const params = new URLSearchParams()
       if (options?.search) params.set('search', options.search)
       if (options?.limit) params.set('limit', options.limit.toString())
-      if (options?.offset) params.set('offset', options.offset.toString())
+      if (options?.cursor) {
+        params.set('cursor', options.cursor.cursor.toString())
+        params.set('cursorId', options.cursor.cursorId)
+      }
 
-      const url = `/api/knowledge/${knowledgeBaseId}/documents${params.toString() ? `?${params.toString()}` : ''}`
+      const url = `/api/knowledge/${knowledgeBaseId}/documents?${params.toString()}`
       const response = await fetch(url)
 
       if (!response.ok) {
@@ -296,13 +314,8 @@ export const useKnowledgeStore = create<KnowledgeStore>((set, get) => ({
         throw new Error(result.error || 'Failed to fetch documents')
       }
 
-      const documents = result.data.documents || result.data // Handle both paginated and non-paginated responses
-      const pagination = result.data.pagination || {
-        total: documents.length,
-        limit: options?.limit || 50,
-        offset: options?.offset || 0,
-        hasMore: false,
-      }
+      const documents = result.data.documents
+      const pagination = result.data.pagination
 
       const documentsCache: DocumentsCache = {
         documents,
@@ -339,18 +352,14 @@ export const useKnowledgeStore = create<KnowledgeStore>((set, get) => ({
   getChunks: async (
     knowledgeBaseId: string,
     documentId: string,
-    options?: { search?: string; limit?: number; offset?: number }
+    options?: { search?: string; limit?: number; cursor?: NextCursor }
   ) => {
     const state = get()
 
-    // Return cached chunks if they exist and match the exact search criteria AND offset
+    // For cursor pagination, only return cached chunks if search hasn't changed
+    // and we're not using a cursor (i.e., first page request)
     const cached = state.chunks[documentId]
-    if (
-      cached &&
-      cached.searchQuery === options?.search &&
-      cached.pagination.offset === (options?.offset || 0) &&
-      cached.pagination.limit === (options?.limit || 50)
-    ) {
+    if (cached && !options?.cursor && cached.searchQuery === options?.search) {
       return cached.chunks
     }
 
@@ -364,11 +373,14 @@ export const useKnowledgeStore = create<KnowledgeStore>((set, get) => ({
         loadingChunks: new Set([...state.loadingChunks, documentId]),
       }))
 
-      // Build query parameters
+      // Build query parameters for cursor pagination
       const params = new URLSearchParams()
       if (options?.search) params.set('search', options.search)
       if (options?.limit) params.set('limit', options.limit.toString())
-      if (options?.offset) params.set('offset', options.offset.toString())
+      if (options?.cursor) {
+        params.set('cursor', options.cursor.cursor.toString())
+        params.set('cursorId', options.cursor.cursorId)
+      }
 
       const response = await fetch(
         `/api/knowledge/${knowledgeBaseId}/documents/${documentId}/chunks?${params.toString()}`
@@ -387,20 +399,17 @@ export const useKnowledgeStore = create<KnowledgeStore>((set, get) => ({
       const chunks = result.data
       const pagination = result.pagination
 
+      const chunksCache: ChunksCache = {
+        chunks,
+        pagination,
+        searchQuery: options?.search,
+        lastFetchTime: Date.now(),
+      }
+
       set((state) => ({
         chunks: {
           ...state.chunks,
-          [documentId]: {
-            chunks, // Always replace chunks for traditional pagination
-            pagination: {
-              total: pagination?.total || chunks.length,
-              limit: pagination?.limit || options?.limit || 50,
-              offset: pagination?.offset || options?.offset || 0,
-              hasMore: pagination?.hasMore || false,
-            },
-            searchQuery: options?.search,
-            lastFetchTime: Date.now(),
-          },
+          [documentId]: chunksCache,
         },
         loadingChunks: new Set(
           [...state.loadingChunks].filter((loadingId) => loadingId !== documentId)
@@ -501,7 +510,7 @@ export const useKnowledgeStore = create<KnowledgeStore>((set, get) => ({
 
   refreshDocuments: async (
     knowledgeBaseId: string,
-    options?: { search?: string; limit?: number; offset?: number }
+    options?: { search?: string; limit?: number }
   ) => {
     const state = get()
 
@@ -515,11 +524,11 @@ export const useKnowledgeStore = create<KnowledgeStore>((set, get) => ({
         loadingDocuments: new Set([...state.loadingDocuments, knowledgeBaseId]),
       }))
 
-      // Build query parameters - for refresh, always start from offset 0
+      // Build query parameters - for refresh, don't use cursor (start fresh)
       const params = new URLSearchParams()
       if (options?.search) params.set('search', options.search)
       if (options?.limit) params.set('limit', options.limit.toString())
-      params.set('offset', '0') // Always start fresh on refresh
+      // No cursor parameters for refresh - start from beginning
 
       const url = `/api/knowledge/${knowledgeBaseId}/documents${params.toString() ? `?${params.toString()}` : ''}`
       const response = await fetch(url)
@@ -538,8 +547,8 @@ export const useKnowledgeStore = create<KnowledgeStore>((set, get) => ({
       const pagination = result.data.pagination || {
         total: serverDocuments.length,
         limit: options?.limit || 50,
-        offset: 0,
         hasMore: false,
+        nextCursor: null,
       }
 
       set((state) => {
@@ -631,7 +640,7 @@ export const useKnowledgeStore = create<KnowledgeStore>((set, get) => ({
   refreshChunks: async (
     knowledgeBaseId: string,
     documentId: string,
-    options?: { search?: string; limit?: number; offset?: number }
+    options?: { search?: string; limit?: number }
   ) => {
     const state = get()
 
@@ -645,11 +654,11 @@ export const useKnowledgeStore = create<KnowledgeStore>((set, get) => ({
         loadingChunks: new Set([...state.loadingChunks, documentId]),
       }))
 
-      // Build query parameters - for refresh, always start from offset 0
+      // Build query parameters - for refresh, don't use cursor (start fresh)
       const params = new URLSearchParams()
       if (options?.search) params.set('search', options.search)
       if (options?.limit) params.set('limit', options.limit.toString())
-      params.set('offset', '0') // Always start fresh on refresh
+      // No cursor parameters for refresh - start from beginning
 
       const response = await fetch(
         `/api/knowledge/${knowledgeBaseId}/documents/${documentId}/chunks?${params.toString()}`
@@ -668,20 +677,17 @@ export const useKnowledgeStore = create<KnowledgeStore>((set, get) => ({
       const chunks = result.data
       const pagination = result.pagination
 
+      const chunksCache: ChunksCache = {
+        chunks, // Replace all chunks with fresh data
+        pagination,
+        searchQuery: options?.search,
+        lastFetchTime: Date.now(),
+      }
+
       set((state) => ({
         chunks: {
           ...state.chunks,
-          [documentId]: {
-            chunks, // Replace all chunks with fresh data
-            pagination: {
-              total: pagination?.total || chunks.length,
-              limit: pagination?.limit || options?.limit || 50,
-              offset: 0, // Reset to start
-              hasMore: pagination?.hasMore || false,
-            },
-            searchQuery: options?.search,
-            lastFetchTime: Date.now(),
-          },
+          [documentId]: chunksCache,
         },
         loadingChunks: new Set(
           [...state.loadingChunks].filter((loadingId) => loadingId !== documentId)
@@ -699,6 +705,103 @@ export const useKnowledgeStore = create<KnowledgeStore>((set, get) => ({
         ),
       }))
 
+      throw error
+    }
+  },
+
+  loadMoreDocuments: async (
+    knowledgeBaseId: string,
+    options?: { search?: string; limit?: number }
+  ) => {
+    const state = get()
+    const cached = state.documents[knowledgeBaseId]
+
+    // Only load more if we have cached data and there are more results
+    if (!cached || !cached.pagination.hasMore || !cached.pagination.nextCursor) {
+      return cached?.documents || []
+    }
+
+    try {
+      // Use the existing getDocuments method with the cursor
+      const moreDocuments = await get().getDocuments(knowledgeBaseId, {
+        search: options?.search || cached.searchQuery,
+        limit: options?.limit || cached.pagination.limit,
+        cursor: cached.pagination.nextCursor,
+      })
+
+      // Get the updated pagination from the API response
+      const updatedCache = get().documents[knowledgeBaseId]
+
+      // Append to existing documents and update pagination
+      set((state) => {
+        const currentCache = state.documents[knowledgeBaseId]
+        if (!currentCache) return state
+
+        return {
+          documents: {
+            ...state.documents,
+            [knowledgeBaseId]: {
+              ...currentCache,
+              documents: [...currentCache.documents, ...moreDocuments],
+              // Update pagination to reflect the new cursor state
+              pagination: updatedCache?.pagination || currentCache.pagination,
+            },
+          },
+        }
+      })
+
+      return moreDocuments
+    } catch (error) {
+      logger.error(`Error loading more documents for knowledge base ${knowledgeBaseId}:`, error)
+      throw error
+    }
+  },
+
+  loadMoreChunks: async (
+    knowledgeBaseId: string,
+    documentId: string,
+    options?: { search?: string; limit?: number }
+  ) => {
+    const state = get()
+    const cached = state.chunks[documentId]
+
+    // Only load more if we have cached data and there are more results
+    if (!cached || !cached.pagination.hasMore || !cached.pagination.nextCursor) {
+      return cached?.chunks || []
+    }
+
+    try {
+      // Use the existing getChunks method with the cursor
+      const moreChunks = await get().getChunks(knowledgeBaseId, documentId, {
+        search: options?.search || cached.searchQuery,
+        limit: options?.limit || cached.pagination.limit,
+        cursor: cached.pagination.nextCursor,
+      })
+
+      // Get the updated pagination from the API response
+      const updatedCache = get().chunks[documentId]
+
+      // Append to existing chunks and update pagination
+      set((state) => {
+        const currentCache = state.chunks[documentId]
+        if (!currentCache) return state
+
+        return {
+          chunks: {
+            ...state.chunks,
+            [documentId]: {
+              ...currentCache,
+              chunks: [...currentCache.chunks, ...moreChunks],
+              // Update pagination to reflect the new cursor state
+              pagination: updatedCache?.pagination || currentCache.pagination,
+            },
+          },
+        }
+      })
+
+      return moreChunks
+    } catch (error) {
+      logger.error(`Error loading more chunks for document ${documentId}:`, error)
       throw error
     }
   },
@@ -765,8 +868,8 @@ export const useKnowledgeStore = create<KnowledgeStore>((set, get) => ({
         pagination: {
           ...(existingDocumentsCache?.pagination || {
             limit: 50,
-            offset: 0,
             hasMore: false,
+            nextCursor: null,
           }),
           total: updatedDocuments.length,
         },

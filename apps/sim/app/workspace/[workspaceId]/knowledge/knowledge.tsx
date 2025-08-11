@@ -25,7 +25,7 @@ export function Knowledge() {
   const params = useParams()
   const workspaceId = params.workspaceId as string
 
-  const { knowledgeBases, isLoading, error, addKnowledgeBase, refreshList } =
+  const { knowledgeBasesList, isLoading, error, addKnowledgeBase, refreshKnowledgeBasesList } =
     useKnowledgeBasesList(workspaceId)
   const userPermissions = useUserPermissionsContext()
 
@@ -37,17 +37,18 @@ export function Knowledge() {
   }
 
   const handleRetry = () => {
-    refreshList()
+    refreshKnowledgeBasesList()
   }
 
   const filteredKnowledgeBases = useMemo(() => {
-    if (!searchQuery.trim()) return knowledgeBases
+    if (!searchQuery.trim()) return knowledgeBasesList
 
     const query = searchQuery.toLowerCase()
-    return knowledgeBases.filter(
-      (kb) => kb.name.toLowerCase().includes(query) || kb.description?.toLowerCase().includes(query)
+    return knowledgeBasesList.filter(
+      (kb: KnowledgeBaseData) =>
+        kb.name.toLowerCase().includes(query) || kb.description?.toLowerCase().includes(query)
     )
-  }, [knowledgeBases, searchQuery])
+  }, [knowledgeBasesList, searchQuery])
 
   const formatKnowledgeBaseForDisplay = (kb: KnowledgeBaseWithDocCount) => ({
     id: kb.id,
@@ -114,7 +115,7 @@ export function Knowledge() {
                 ) : (
                   <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
                     {filteredKnowledgeBases.length === 0 ? (
-                      knowledgeBases.length === 0 ? (
+                      knowledgeBasesList.length === 0 ? (
                         <EmptyStateCard
                           title='Create your first knowledge base'
                           description={
@@ -142,7 +143,7 @@ export function Knowledge() {
                         </div>
                       )
                     ) : (
-                      filteredKnowledgeBases.map((kb) => {
+                      filteredKnowledgeBases.map((kb: KnowledgeBaseData) => {
                         const displayData = formatKnowledgeBaseForDisplay(
                           kb as KnowledgeBaseWithDocCount
                         )
