@@ -3616,12 +3616,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "wallet_address": {
-          "name": "wallet_address",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
@@ -3632,12 +3626,6 @@
           "name": "user_email_unique",
           "nullsNotDistinct": false,
           "columns": ["email"]
-        },
-        "user_wallet_address_unique": {
-          "name": "user_wallet_address_unique",
-          "nullsNotDistinct": false,
-          "columns": ["wallet_address"]
-        }
         }
       },
       "policies": {},
