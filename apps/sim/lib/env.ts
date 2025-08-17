@@ -1,6 +1,6 @@
-import { createEnv } from '@t3-oss/env-nextjs'
-import { env as runtimeEnv } from 'next-runtime-env'
-import { z } from 'zod'
+import { createEnv } from "@t3-oss/env-nextjs";
+import { env as runtimeEnv } from "next-runtime-env";
+import { z } from "zod";
 
 /**
  * Universal environment variable getter that works in both client and server contexts.
@@ -8,7 +8,8 @@ import { z } from 'zod'
  * - Server-side: Falls back to process.env when runtimeEnv returns undefined
  * - Provides seamless Docker runtime variable support for NEXT_PUBLIC_ vars
  */
-const getEnv = (variable: string) => runtimeEnv(variable) ?? process.env[variable]
+const getEnv = (variable: string) =>
+  runtimeEnv(variable) ?? process.env[variable];
 
 // biome-ignore format: keep alignment for readability
 export const env = createEnv({
@@ -24,15 +25,18 @@ export const env = createEnv({
     ALLOWED_LOGIN_DOMAINS: z.string().optional(), // Comma-separated list of allowed email domains for login
     ENCRYPTION_KEY: z.string().min(32), // Key for encrypting sensitive data
     INTERNAL_API_SECRET: z.string().min(32), // Secret for internal API authentication
-    SIM_AGENT_API_KEY: z.string().min(1).optional(), // Secret for internal sim agent API authentication
+    // Copilot/Sim Agent configuration
+    COPILOT_API_KEY: z.string().min(1).optional(), // API key for Copilot backend requests
+    SIM_AGENT_API_KEY: z.string().min(1).optional(), // API key for internal sim agent
     SIM_AGENT_API_URL: z.string().url().optional(), // URL for internal sim agent API
+    AGENT_API_DB_ENCRYPTION_KEY: z.string().min(32).optional(), // Encryption key for sim agent DB
+    AGENT_API_NETWORK_ENCRYPTION_KEY: z.string().min(32).optional(), // Encryption key for sim agent network
 
     // Database & Storage
     POSTGRES_URL: z.string().url().optional(), // Alternative PostgreSQL connection string
     REDIS_URL: z.string().url().optional(), // Redis connection string for caching/sessions
 
     // Payment & Billing
-    BILLING_ENABLED: z.boolean().optional(), // Enable billing enforcement and usage tracking
     STRIPE_SECRET_KEY: z.string().min(1).optional(), // Stripe secret key for payment processing
     STRIPE_BILLING_WEBHOOK_SECRET: z.string().min(1).optional(), // Webhook secret for billing events
     STRIPE_WEBHOOK_SECRET: z.string().min(1).optional(), // General Stripe webhook secret
@@ -44,6 +48,7 @@ export const env = createEnv({
     TEAM_TIER_COST_LIMIT: z.number().optional(), // Cost limit for team tier users
     STRIPE_ENTERPRISE_PRICE_ID: z.string().min(1).optional(), // Stripe price ID for enterprise tier
     ENTERPRISE_TIER_COST_LIMIT: z.number().optional(), // Cost limit for enterprise tier users
+    BILLING_ENABLED: z.boolean().optional(), // Enable billing enforcement and usage tracking
 
     // Email & Communication
     RESEND_API_KEY: z.string().min(1).optional(), // Resend API key for transactional emails
@@ -238,10 +243,7 @@ export const env = createEnv({
       process.env.NEXT_PUBLIC_BRAND_SECONDARY_COLOR,
     NEXT_PUBLIC_BRAND_ACCENT_COLOR: process.env.NEXT_PUBLIC_BRAND_ACCENT_COLOR,
     NEXT_PUBLIC_CUSTOM_CSS_URL: process.env.NEXT_PUBLIC_CUSTOM_CSS_URL,
-    NEXT_PUBLIC_HIDE_BRANDING: process.env.NEXT_PUBLIC_HIDE_BRANDING,
-    NEXT_PUBLIC_CUSTOM_FOOTER_TEXT: process.env.NEXT_PUBLIC_CUSTOM_FOOTER_TEXT,
     NEXT_PUBLIC_SUPPORT_EMAIL: process.env.NEXT_PUBLIC_SUPPORT_EMAIL,
-    NEXT_PUBLIC_SUPPORT_URL: process.env.NEXT_PUBLIC_SUPPORT_URL,
     NEXT_PUBLIC_DOCUMENTATION_URL: process.env.NEXT_PUBLIC_DOCUMENTATION_URL,
     NEXT_PUBLIC_TERMS_URL: process.env.NEXT_PUBLIC_TERMS_URL,
     NEXT_PUBLIC_PRIVACY_URL: process.env.NEXT_PUBLIC_PRIVACY_URL,
@@ -252,6 +254,8 @@ export const env = createEnv({
 
 // Need this utility because t3-env is returning string for boolean values.
 export const isTruthy = (value: string | boolean | number | undefined) =>
-  typeof value === 'string' ? value === 'true' || value === '1' : Boolean(value)
+  typeof value === "string"
+    ? value.toLowerCase() === "true" || value === "1"
+    : Boolean(value);
 
-export { getEnv }
+export { getEnv };

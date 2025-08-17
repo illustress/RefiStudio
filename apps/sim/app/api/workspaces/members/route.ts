@@ -7,8 +7,6 @@ import { permissions, type permissionTypeEnum, user } from '@/db/schema'
 
 type PermissionType = (typeof permissionTypeEnum.enumValues)[number]
 
-export const dynamic = 'force-dynamic'
-
 // Add a member to a workspace
 export async function POST(req: Request) {
   const auth = await checkHybridAuth(req as any)

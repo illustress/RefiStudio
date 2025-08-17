@@ -429,10 +429,23 @@ export const useWorkflowRegistry = createWithEqualityFn<WorkflowRegistry>()(
       // Modified setActiveWorkflow to work with clean DB-only architecture
       setActiveWorkflow: async (id: string) => {
         const { workflows, activeWorkflowId } = get()
-        if (!workflows[id]) {
-          set({ error: `Workflow ${id} not found` })
+
+        // Check if workflow is already active AND has data loaded
+        const workflowStoreState = useWorkflowStore.getState()
+        const hasWorkflowData = Object.keys(workflowStoreState.blocks).length > 0
+
+        if (activeWorkflowId === id && hasWorkflowData) {
+          logger.info(`Already active workflow ${id} with data loaded, skipping switch`)
           return
         }
+
+        if (!workflows[id]) {
+          logger.error(`Workflow ${id} not found in registry`)
+          set({ error: `Workflow not found: ${id}` })
+          throw new Error(`Workflow not found: ${id}`)
+        }
+
+        logger.info(`Switching to workflow ${id}`)
 
         // First, sync the current workflow before switching (if there is one)
         if (activeWorkflowId && activeWorkflowId !== id) {

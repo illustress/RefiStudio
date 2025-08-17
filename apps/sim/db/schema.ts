@@ -123,8 +123,6 @@ export const workflow = pgTable(
     folderId: text('folder_id').references(() => workflowFolder.id, { onDelete: 'set null' }),
     name: text('name').notNull(),
     description: text('description'),
-    // DEPRECATED: Use normalized tables (workflow_blocks, workflow_edges, workflow_subflows) instead
-    state: json('state').notNull(),
     color: text('color').notNull().default('#3972F6'),
     lastSynced: timestamp('last_synced').notNull(),
     createdAt: timestamp('created_at').notNull(),
@@ -132,7 +130,6 @@ export const workflow = pgTable(
     isDeployed: boolean('is_deployed').notNull().default(false),
     deployedState: json('deployed_state'),
     deployedAt: timestamp('deployed_at'),
-    // When set, only this API key is authorized for execution
     pinnedApiKey: text('pinned_api_key'),
     collaborators: json('collaborators').notNull().default('[]'),
     runCount: integer('run_count').notNull().default(0),
@@ -287,24 +284,14 @@ export const workflowExecutionLogs = pgTable(
       .references(() => workflowExecutionSnapshots.id),
 
     level: text('level').notNull(), // 'info', 'error'
-    message: text('message').notNull(),
     trigger: text('trigger').notNull(), // 'api', 'webhook', 'schedule', 'manual', 'chat'
 
     startedAt: timestamp('started_at').notNull(),
     endedAt: timestamp('ended_at'),
     totalDurationMs: integer('total_duration_ms'),
 
-    blockCount: integer('block_count').notNull().default(0),
-    successCount: integer('success_count').notNull().default(0),
-    errorCount: integer('error_count').notNull().default(0),
-    skippedCount: integer('skipped_count').notNull().default(0),
-
-    totalCost: decimal('total_cost', { precision: 10, scale: 6 }),
-    totalInputCost: decimal('total_input_cost', { precision: 10, scale: 6 }),
-    totalOutputCost: decimal('total_output_cost', { precision: 10, scale: 6 }),
-    totalTokens: integer('total_tokens'),
-
-    metadata: jsonb('metadata').notNull().default('{}'),
+    executionData: jsonb('execution_data').notNull().default('{}'),
+    cost: jsonb('cost'),
     files: jsonb('files'), // File metadata for execution files
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
@@ -351,7 +338,6 @@ export const settings = pgTable('settings', {
 
   // Privacy settings
   telemetryEnabled: boolean('telemetry_enabled').notNull().default(true),
-  telemetryNotifiedUser: boolean('telemetry_notified_user').notNull().default(false),
 
   // Email preferences
   emailPreferences: json('email_preferences').notNull().default('{}'),
@@ -468,6 +454,10 @@ export const userStats = pgTable('user_stats', {
   billingPeriodStart: timestamp('billing_period_start').defaultNow(), // When current billing period started
   billingPeriodEnd: timestamp('billing_period_end'), // When current billing period ends
   lastPeriodCost: decimal('last_period_cost').default('0'), // Usage from previous billing period
+  // Copilot usage tracking
+  totalCopilotCost: decimal('total_copilot_cost').notNull().default('0'),
+  totalCopilotTokens: integer('total_copilot_tokens').notNull().default(0),
+  totalCopilotCalls: integer('total_copilot_calls').notNull().default(0),
   lastActive: timestamp('last_active').notNull().defaultNow(),
 })
 
@@ -1009,6 +999,7 @@ export const copilotChats = pgTable(
     title: text('title'),
     messages: jsonb('messages').notNull().default('[]'),
     model: text('model').notNull().default('claude-3-7-sonnet-latest'),
+    conversationId: text('conversation_id'),
     previewYaml: text('preview_yaml'), // YAML content for pending workflow preview
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
@@ -1178,5 +1169,27 @@ export const copilotFeedback = pgTable(
 
     // Ordering indexes
     createdAtIdx: index('copilot_feedback_created_at_idx').on(table.createdAt),
+  })
+)
+
+export const copilotApiKeys = pgTable(
+  'copilot_api_keys',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    apiKeyEncrypted: text('api_key_encrypted').notNull(),
+    apiKeyLookup: text('api_key_lookup').notNull(),
+  },
+  (table) => ({
+    apiKeyEncryptedHashIdx: index('copilot_api_keys_api_key_encrypted_hash_idx').using(
+      'hash',
+      table.apiKeyEncrypted
+    ),
+    apiKeyLookupHashIdx: index('copilot_api_keys_lookup_hash_idx').using(
+      'hash',
+      table.apiKeyLookup
+    ),
   })
 )

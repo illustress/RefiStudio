@@ -2,9 +2,6 @@ import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
-
-export const dynamic = 'force-dynamic'
-
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import { db } from '@/db'
 import { chat } from '@/db/schema'

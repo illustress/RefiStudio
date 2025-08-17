@@ -3,9 +3,6 @@ import { and, eq, isNull } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
-
-export const dynamic = 'force-dynamic'
-
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import { db } from '@/db'
 import { workflow, workspace } from '@/db/schema'

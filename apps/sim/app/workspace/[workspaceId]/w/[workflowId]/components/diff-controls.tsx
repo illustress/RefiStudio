@@ -187,35 +187,28 @@ export function DiffControls() {
     }
   }
 
-  const handleAccept = () => {
-    logger.info('Accepting proposed changes (optimistic)')
+  const handleAccept = async () => {
+    logger.info('Accepting proposed changes with backup protection')
 
-    // Create checkpoint in the background (don't await to avoid blocking)
-    createCheckpoint()
-      .then((checkpointCreated) => {
-        if (!checkpointCreated) {
-          logger.warn('Checkpoint creation failed, but proceeding with accept')
-        } else {
-          logger.info('Checkpoint created successfully before accept')
-        }
-      })
-      .catch((error) => {
-        logger.error('Checkpoint creation failed:', error)
+    try {
+      // Clear preview YAML immediately
+      await clearPreviewYaml().catch((error) => {
+        logger.warn('Failed to clear preview YAML:', error)
       })
 
-    // Clear preview YAML immediately
-    clearPreviewYaml().catch((error) => {
-      logger.warn('Failed to clear preview YAML:', error)
-    })
+      // Accept changes without blocking the UI; errors will be logged by the store handler
+      acceptChanges().catch((error) => {
+        logger.error('Failed to accept changes (background):', error)
+      })
 
-    // Start background save without awaiting
-    acceptChanges().catch((error) => {
-      logger.error('Failed to accept changes in background:', error)
-      // TODO: Consider showing a toast notification for save failures
-      // For now, the optimistic update stands since the UI state is already correct
-    })
+      logger.info('Accept triggered; UI will update optimistically')
+    } catch (error) {
+      logger.error('Failed to accept changes:', error)
 
-    logger.info('Optimistically applied changes, saving in background')
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      console.error('Workflow update failed:', errorMessage)
+      alert(`Failed to save workflow changes: ${errorMessage}`)
+    }
   }
 
   const handleReject = () => {

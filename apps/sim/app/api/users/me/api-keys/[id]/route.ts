@@ -2,9 +2,6 @@ import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
-
-export const dynamic = 'force-dynamic'
-
 import { db } from '@/db'
 import { apiKey } from '@/db/schema'
 

@@ -3,12 +3,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui'
-import { getEnv } from '@/lib/env'
+import { getEnv, isTruthy } from '@/lib/env'
+import { isHosted } from '@/lib/environment'
 import { createLogger } from '@/lib/logs/console/logger'
 import { cn } from '@/lib/utils'
 import {
   Account,
   ApiKeys,
+  Copilot,
   Credentials,
   EnvironmentVariables,
   General,
@@ -21,6 +23,8 @@ import { useOrganizationStore } from '@/stores/organization'
 import { useGeneralStore } from '@/stores/settings/general/store'
 
 const logger = createLogger('SettingsModal')
+
+const isBillingEnabled = isTruthy(getEnv('NEXT_PUBLIC_BILLING_ENABLED'))
 
 interface SettingsModalProps {
   open: boolean
@@ -36,6 +40,7 @@ type SettingsSection =
   | 'subscription'
   | 'team'
   | 'privacy'
+  | 'copilot'
 
 export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [activeSection, setActiveSection] = useState<SettingsSection>('general')
@@ -43,9 +48,6 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const loadSettings = useGeneralStore((state) => state.loadSettings)
   const { activeOrganization } = useOrganizationStore()
   const hasLoadedInitialData = useRef(false)
-
-  // Get billing status
-  const isBillingEnabled = getEnv('NEXT_PUBLIC_BILLING_ENABLED') || false
 
   useEffect(() => {
     async function loadAllSettings() {
@@ -147,6 +149,11 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
             {isBillingEnabled && (
               <div className={cn('h-full', activeSection === 'team' ? 'block' : 'hidden')}>
                 <TeamManagement />
+              </div>
+            )}
+            {isHosted && (
+              <div className={cn('h-full', activeSection === 'copilot' ? 'block' : 'hidden')}>
+                <Copilot />
               </div>
             )}
             <div className={cn('h-full', activeSection === 'privacy' ? 'block' : 'hidden')}>

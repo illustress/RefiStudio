@@ -1,5 +1,5 @@
 {
-  "id": "7cd136ec-e516-4b5e-a748-a1560d337d37",
+  "id": "5a621010-b08a-4875-81fe-f6aa9b800872",
   "prevId": "09ef8ea2-7660-45aa-bfff-df5d0b3f7a7d",
   "version": "7",
   "dialect": "postgresql",
@@ -365,6 +365,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'claude-3-7-sonnet-latest'"
+        },
+        "conversation_id": {
+          "name": "conversation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "preview_yaml": {
           "name": "preview_yaml",
@@ -3631,6 +3637,7 @@
           "name": "user_wallet_address_unique",
           "nullsNotDistinct": false,
           "columns": ["wallet_address"]
+        }
         }
       },
       "policies": {},

@@ -8,9 +8,6 @@ import { workflow, workflowBlocks } from '@/db/schema'
 
 const logger = createLogger('WorkflowAPI')
 
-export const dynamic = 'force-dynamic'
-
-// Schema for workflow creation
 const CreateWorkflowSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   description: z.string().optional().default(''),
@@ -153,7 +150,6 @@ export async function POST(req: NextRequest) {
         folderId: folderId || null,
         name,
         description,
-        state: initialState,
         color,
         lastSynced: now,
         createdAt: now,

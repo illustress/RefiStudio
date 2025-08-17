@@ -3,9 +3,6 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
-
-export const dynamic = 'force-dynamic'
-
 import { db } from '@/db'
 import { member, organization, subscription } from '@/db/schema'
 
