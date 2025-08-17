@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { getUsersWithPermissions, hasWorkspaceAdminAccess } from '@/lib/permissions/utils'
 
 export const dynamic = 'force-dynamic'
@@ -30,9 +30,8 @@ interface UpdatePermissionsRequest {
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id: workspaceId } = await params
-    const session = await getSession()
-
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(request)
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     }
 
@@ -44,7 +43,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         and(
           eq(permissions.entityId, workspaceId),
           eq(permissions.entityType, 'workspace'),
-          eq(permissions.userId, session.user.id)
+          eq(permissions.userId, auth.userId)
         )
       )
       .limit(1)
@@ -78,14 +77,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id: workspaceId } = await params
-    const session = await getSession()
-
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(request)
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     }
 
     // Verify the current user has admin access to this workspace (either direct or through organization)
-    const hasAdminAccess = await hasWorkspaceAdminAccess(session.user.id, workspaceId)
+    const hasAdminAccess = await hasWorkspaceAdminAccess(auth.userId, workspaceId)
 
     if (!hasAdminAccess) {
       return NextResponse.json(
@@ -98,7 +96,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const body: UpdatePermissionsRequest = await request.json()
 
     // Prevent users from modifying their own admin permissions
-    const selfUpdate = body.updates.find((update) => update.userId === session.user.id)
+    const selfUpdate = body.updates.find((update) => update.userId === auth.userId)
     if (selfUpdate && selfUpdate.permissions !== 'admin') {
       return NextResponse.json(
         { error: 'Cannot remove your own admin permissions' },

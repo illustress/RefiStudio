@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { getMaxSlotsForFieldType, getSlotsForFieldType } from '@/lib/constants/knowledge'
 import { createLogger } from '@/lib/logs/console/logger'
 import { checkKnowledgeBaseAccess } from '@/app/api/knowledge/utils'
@@ -26,13 +26,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       `[${requestId}] Getting next available slot for knowledge base ${knowledgeBaseId}, fieldType: ${fieldType}`
     )
 
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(req as any)
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     // Check if user has read access to the knowledge base
-    const accessCheck = await checkKnowledgeBaseAccess(knowledgeBaseId, session.user.id)
+    const accessCheck = await checkKnowledgeBaseAccess(knowledgeBaseId, auth.userId!)
     if (!accessCheck.hasAccess) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }

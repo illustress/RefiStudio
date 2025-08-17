@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 
 export const dynamic = 'force-dynamic'
@@ -18,9 +18,9 @@ const transferSubscriptionSchema = z.object({
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const subscriptionId = (await params).id
-    const session = await getSession()
+    const auth = await checkHybridAuth(request as any)
 
-    if (!session?.user?.id) {
+    if (!auth?.success || !auth.userId) {
       logger.warn('Unauthorized subscription transfer attempt')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -49,7 +49,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     const { organizationId } = validationResult.data
-    logger.info('Processing subscription transfer', { subscriptionId, organizationId })
+    logger.info('Processing subscription transfer', {
+      subscriptionId,
+      organizationId,
+    })
 
     const sub = await db
       .select()
@@ -61,7 +64,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: 'Subscription not found' }, { status: 404 })
     }
 
-    if (sub.referenceId !== session.user.id) {
+    if (sub.referenceId !== auth.userId) {
       return NextResponse.json(
         { error: 'Unauthorized - subscription does not belong to user' },
         { status: 403 }
@@ -81,10 +84,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const mem = await db
       .select()
       .from(member)
-      .where(and(eq(member.userId, session.user.id), eq(member.organizationId, organizationId)))
+      .where(and(eq(member.userId, auth.userId!), eq(member.organizationId, organizationId)))
       .then((rows) => rows[0])
 
-    const isPersonalTransfer = sub.referenceId === session.user.id
+    const isPersonalTransfer = sub.referenceId === auth.userId
 
     if (!isPersonalTransfer && (!mem || (mem.role !== 'owner' && mem.role !== 'admin'))) {
       return NextResponse.json(
@@ -101,7 +104,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     logger.info('Subscription transfer completed', {
       subscriptionId,
       organizationId,
-      userId: session.user.id,
+      userId: auth.userId!,
     })
 
     return NextResponse.json({

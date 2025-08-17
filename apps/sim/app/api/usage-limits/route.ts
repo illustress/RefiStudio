@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { getUserUsageLimitInfo, updateUserUsageLimit } from '@/lib/billing'
 import { updateMemberUsageLimit } from '@/lib/billing/core/organization-billing'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -15,16 +15,16 @@ export const dynamic = 'force-dynamic'
  *
  */
 export async function GET(request: NextRequest) {
-  const session = await getSession()
+  const auth = await checkHybridAuth(request)
 
   try {
-    if (!session?.user?.id) {
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const { searchParams } = new URL(request.url)
     const context = searchParams.get('context') || 'user'
-    const userId = searchParams.get('userId') || session.user.id
+    const userId = searchParams.get('userId') || auth.userId!
     const organizationId = searchParams.get('organizationId')
 
     // Validate context
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
       }
 
       // Check if the current user has permission to view member usage info
-      const hasPermission = await isOrganizationOwnerOrAdmin(session.user.id, organizationId)
+      const hasPermission = await isOrganizationOwnerOrAdmin(auth.userId!, organizationId)
       if (!hasPermission) {
         logger.warn('Unauthorized attempt to view member usage info', {
           requesterId: session.user.id,
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
     }
 
     // For user context, ensure they can only view their own info
-    if (context === 'user' && userId !== session.user.id) {
+    if (context === 'user' && userId !== auth.userId) {
       return NextResponse.json(
         { error: "Cannot view other users' usage information" },
         { status: 403 }
@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
     })
   } catch (error) {
     logger.error('Failed to get usage limit info', {
-      userId: session?.user?.id,
+      userId: auth?.userId,
       error,
     })
 
@@ -91,16 +91,16 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  const session = await getSession()
+  const auth = await checkHybridAuth(request)
 
   try {
-    if (!session?.user?.id) {
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const { searchParams } = new URL(request.url)
     const context = searchParams.get('context') || 'user'
-    const userId = searchParams.get('userId') || session.user.id
+    const userId = searchParams.get('userId') || auth.userId!
     const organizationId = searchParams.get('organizationId')
 
     const { limit } = await request.json()
@@ -114,7 +114,7 @@ export async function PUT(request: NextRequest) {
 
     if (context === 'user') {
       // Update user's own usage limit
-      if (userId !== session.user.id) {
+      if (userId !== auth.userId) {
         return NextResponse.json({ error: "Cannot update other users' limits" }, { status: 403 })
       }
 
@@ -129,7 +129,7 @@ export async function PUT(request: NextRequest) {
       }
 
       // Check if the current user has permission to update member limits
-      const hasPermission = await isOrganizationOwnerOrAdmin(session.user.id, organizationId)
+      const hasPermission = await isOrganizationOwnerOrAdmin(auth.userId!, organizationId)
       if (!hasPermission) {
         logger.warn('Unauthorized attempt to update member usage limit', {
           adminUserId: session.user.id,
@@ -152,7 +152,7 @@ export async function PUT(request: NextRequest) {
         newLimit: limit,
       })
 
-      await updateMemberUsageLimit(organizationId, userId, limit, session.user.id)
+      await updateMemberUsageLimit(organizationId, userId, limit, auth.userId!)
     } else {
       return NextResponse.json(
         { error: 'Invalid context. Must be "user" or "member"' },
@@ -172,7 +172,7 @@ export async function PUT(request: NextRequest) {
     })
   } catch (error) {
     logger.error('Failed to update usage limit', {
-      userId: session?.user?.id,
+      userId: auth?.userId,
       error,
     })
 

@@ -2,7 +2,7 @@ import { PutObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getStorageProvider, isUsingCloudStorage } from '@/lib/uploads'
 // Dynamic imports for storage clients to avoid client-side bundling
@@ -55,8 +55,8 @@ class ValidationError extends PresignedUrlError {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(request as any)
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
             : 'general'
 
     // Evaluate user id from session for copilot uploads
-    const sessionUserId = session.user.id
+    const sessionUserId = auth.userId!
 
     // Validate copilot-specific requirements (use session user)
     if (uploadType === 'copilot') {
@@ -216,7 +216,9 @@ async function handleS3PresignedUrl(
     let presignedUrl: string
     try {
       const { getS3Client } = await import('@/lib/uploads/s3/s3-client')
-      presignedUrl = await getSignedUrl(getS3Client(), command, { expiresIn: 3600 })
+      presignedUrl = await getSignedUrl(getS3Client(), command, {
+        expiresIn: 3600,
+      })
     } catch (s3Error) {
       logger.error('Failed to generate S3 presigned URL:', s3Error)
       throw new StorageConfigError(

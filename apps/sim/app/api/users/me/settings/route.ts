@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { db } from '@/db'
 import { settings } from '@/db/schema'
@@ -39,19 +39,18 @@ const defaultSettings = {
   emailPreferences: {},
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const requestId = crypto.randomUUID().slice(0, 8)
 
   try {
-    const session = await getSession()
-
+    const auth = await checkHybridAuth(request as any)
     // Return default settings for unauthenticated users instead of 401 error
-    if (!session?.user?.id) {
+    if (!auth?.success || !auth.userId) {
       logger.info(`[${requestId}] Returning default settings for unauthenticated user`)
       return NextResponse.json({ data: defaultSettings }, { status: 200 })
     }
 
-    const userId = session.user.id
+    const userId = auth.userId
     const result = await db.select().from(settings).where(eq(settings.userId, userId)).limit(1)
 
     if (!result.length) {
@@ -86,17 +85,16 @@ export async function PATCH(request: Request) {
   const requestId = crypto.randomUUID().slice(0, 8)
 
   try {
-    const session = await getSession()
-
+    const auth = await checkHybridAuth(request as any)
     // Return success for unauthenticated users instead of error
-    if (!session?.user?.id) {
+    if (!auth?.success || !auth.userId) {
       logger.info(
         `[${requestId}] Settings update attempted by unauthenticated user - acknowledged without saving`
       )
       return NextResponse.json({ success: true }, { status: 200 })
     }
 
-    const userId = session.user.id
+    const userId = auth.userId
     const body = await request.json()
 
     try {

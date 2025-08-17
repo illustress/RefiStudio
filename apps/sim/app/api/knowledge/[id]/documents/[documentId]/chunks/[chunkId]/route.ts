@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'crypto'
 import { eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 
 export const dynamic = 'force-dynamic'
@@ -26,18 +26,13 @@ export async function GET(
   const { id: knowledgeBaseId, documentId, chunkId } = await params
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(req as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized chunk access attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const accessCheck = await checkChunkAccess(
-      knowledgeBaseId,
-      documentId,
-      chunkId,
-      session.user.id
-    )
+    const accessCheck = await checkChunkAccess(knowledgeBaseId, documentId, chunkId, auth.userId!)
 
     if (!accessCheck.hasAccess) {
       if (accessCheck.notFound) {
@@ -47,7 +42,7 @@ export async function GET(
         return NextResponse.json({ error: accessCheck.reason }, { status: 404 })
       }
       logger.warn(
-        `[${requestId}] User ${session.user.id} attempted unauthorized chunk access: ${accessCheck.reason}`
+        `[${requestId}] User ${auth.userId} attempted unauthorized chunk access: ${accessCheck.reason}`
       )
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -74,18 +69,13 @@ export async function PUT(
   const { id: knowledgeBaseId, documentId, chunkId } = await params
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(req as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized chunk update attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const accessCheck = await checkChunkAccess(
-      knowledgeBaseId,
-      documentId,
-      chunkId,
-      session.user.id
-    )
+    const accessCheck = await checkChunkAccess(knowledgeBaseId, documentId, chunkId, auth.userId!)
 
     if (!accessCheck.hasAccess) {
       if (accessCheck.notFound) {
@@ -95,7 +85,7 @@ export async function PUT(
         return NextResponse.json({ error: accessCheck.reason }, { status: 404 })
       }
       logger.warn(
-        `[${requestId}] User ${session.user.id} attempted unauthorized chunk update: ${accessCheck.reason}`
+        `[${requestId}] User ${auth.userId} attempted unauthorized chunk update: ${accessCheck.reason}`
       )
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -167,18 +157,13 @@ export async function DELETE(
   const { id: knowledgeBaseId, documentId, chunkId } = await params
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(req as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized chunk delete attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const accessCheck = await checkChunkAccess(
-      knowledgeBaseId,
-      documentId,
-      chunkId,
-      session.user.id
-    )
+    const accessCheck = await checkChunkAccess(knowledgeBaseId, documentId, chunkId, auth.userId!)
 
     if (!accessCheck.hasAccess) {
       if (accessCheck.notFound) {
@@ -188,7 +173,7 @@ export async function DELETE(
         return NextResponse.json({ error: accessCheck.reason }, { status: 404 })
       }
       logger.warn(
-        `[${requestId}] User ${session.user.id} attempted unauthorized chunk deletion: ${accessCheck.reason}`
+        `[${requestId}] User ${auth.userId} attempted unauthorized chunk deletion: ${accessCheck.reason}`
       )
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

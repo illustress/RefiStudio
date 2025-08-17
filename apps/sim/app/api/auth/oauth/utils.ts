@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { refreshOAuthToken } from '@/lib/oauth/oauth'
 import { db } from '@/db'
@@ -31,15 +31,13 @@ export async function getUserId(
     return workflows[0].userId
   }
   // This is a client-side request, use the session
-  const session = await getSession()
-
-  // Check if the user is authenticated
-  if (!session?.user?.id) {
+  const reqLike = { headers: new Headers() } as any
+  const auth = await checkHybridAuth(reqLike)
+  if (!auth?.success || !auth.userId) {
     logger.warn(`[${requestId}] Unauthenticated request rejected`)
     return undefined
   }
-
-  return session.user.id
+  return auth.userId
 }
 
 /**

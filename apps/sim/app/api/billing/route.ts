@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { getSimplifiedBillingSummary } from '@/lib/billing/core/billing'
 import { getOrganizationBillingData } from '@/lib/billing/core/organization-billing'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -13,10 +13,10 @@ const logger = createLogger('UnifiedBillingAPI')
  * Unified Billing Endpoint
  */
 export async function GET(request: NextRequest) {
-  const session = await getSession()
+  const auth = await checkHybridAuth(request)
 
   try {
-    if (!session?.user?.id) {
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -44,13 +44,13 @@ export async function GET(request: NextRequest) {
 
     if (context === 'user') {
       // Get user billing (may include organization if they're part of one)
-      billingData = await getSimplifiedBillingSummary(session.user.id, contextId || undefined)
+      billingData = await getSimplifiedBillingSummary(auth.userId!, contextId || undefined)
     } else {
       // Get user role in organization for permission checks first
       const memberRecord = await db
         .select({ role: member.role })
         .from(member)
-        .where(and(eq(member.organizationId, contextId!), eq(member.userId, session.user.id)))
+        .where(and(eq(member.organizationId, contextId!), eq(member.userId, auth.userId!)))
         .limit(1)
 
       if (memberRecord.length === 0) {
@@ -107,7 +107,7 @@ export async function GET(request: NextRequest) {
     })
   } catch (error) {
     logger.error('Failed to get billing data', {
-      userId: session?.user?.id,
+      userId: auth?.userId,
       error,
     })
 

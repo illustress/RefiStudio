@@ -1,5 +1,5 @@
 import type { Edge } from 'reactflow'
-import { create } from 'zustand'
+import { createWithEqualityFn } from 'zustand/traditional'
 import { devtools } from 'zustand/middleware'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getBlock } from '@/blocks'
@@ -71,7 +71,7 @@ const createSyncControl = (): SyncControl => ({
   },
 })
 
-export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
+export const useWorkflowStore = createWithEqualityFn<WorkflowStoreWithHistory>()(
   devtools(
     withHistory((set, get) => ({
       ...initialState,
@@ -628,7 +628,11 @@ export const useWorkflowStore = create<WorkflowStoreWithHistory>()(
           // workflowValues: {[block_id]:{[subblock_id]:[subblock_value]}}
           const workflowValues = subBlockStore.workflowValues[activeWorkflowId] || {}
           const updatedWorkflowValues = { ...workflowValues }
-          const changedSubblocks: Array<{ blockId: string; subBlockId: string; newValue: any }> = []
+          const changedSubblocks: Array<{
+            blockId: string
+            subBlockId: string
+            newValue: any
+          }> = []
 
           // Loop through blocks
           Object.entries(workflowValues).forEach(([blockId, blockValues]) => {

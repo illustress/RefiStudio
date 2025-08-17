@@ -38,7 +38,19 @@ export async function GET(request: NextRequest) {
       logger.warn(`[${requestId}] Unauthenticated credentials request rejected`)
       return NextResponse.json({ error: 'User not authenticated' }, { status: 401 })
     }
-    const requesterUserId = authResult.userId
+    let requesterUserId = authResult.userId
+
+    // Bridge SIWE: prefer SIWE userId if cookie exists and differs
+    try {
+      const siweCookie = request.cookies.get('siwe_session')?.value
+      if (siweCookie) {
+        const raw = Buffer.from(siweCookie, 'base64url').toString('utf8')
+        const parsed = JSON.parse(raw) as { uid?: string }
+        if (parsed?.uid && parsed.uid !== requesterUserId) {
+          requesterUserId = parsed.uid
+        }
+      }
+    } catch {}
 
     // Resolve effective user id: workflow owner if workflowId provided (with access check); else requester
     let effectiveUserId: string

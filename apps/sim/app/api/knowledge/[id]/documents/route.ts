@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto'
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { getSlotsForFieldType } from '@/lib/constants/knowledge'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserId } from '@/app/api/auth/oauth/utils'
@@ -316,13 +316,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id: knowledgeBaseId } = await params
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(req as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized documents access attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const accessCheck = await checkKnowledgeBaseAccess(knowledgeBaseId, session.user.id)
+    const accessCheck = await checkKnowledgeBaseAccess(knowledgeBaseId, auth.userId!)
 
     if (!accessCheck.hasAccess) {
       if ('notFound' in accessCheck && accessCheck.notFound) {
@@ -330,7 +330,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         return NextResponse.json({ error: 'Knowledge base not found' }, { status: 404 })
       }
       logger.warn(
-        `[${requestId}] User ${session.user.id} attempted to access unauthorized knowledge base documents ${knowledgeBaseId}`
+        `[${requestId}] User ${auth.userId} attempted to access unauthorized knowledge base documents ${knowledgeBaseId}`
       )
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -653,13 +653,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { id: knowledgeBaseId } = await params
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(req as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized bulk document operation attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const accessCheck = await checkKnowledgeBaseWriteAccess(knowledgeBaseId, session.user.id)
+    const accessCheck = await checkKnowledgeBaseWriteAccess(knowledgeBaseId, auth.userId!)
 
     if (!accessCheck.hasAccess) {
       if ('notFound' in accessCheck && accessCheck.notFound) {
@@ -667,7 +667,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         return NextResponse.json({ error: 'Knowledge base not found' }, { status: 404 })
       }
       logger.warn(
-        `[${requestId}] User ${session.user.id} attempted to perform bulk operation on unauthorized knowledge base ${knowledgeBaseId}`
+        `[${requestId}] User ${auth.userId} attempted to perform bulk operation on unauthorized knowledge base ${knowledgeBaseId}`
       )
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -708,7 +708,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
 
       // Perform the bulk operation
-      let updateResult: Array<{ id: string; enabled?: boolean; deletedAt?: Date | null }>
+      let updateResult: Array<{
+        id: string
+        enabled?: boolean
+        deletedAt?: Date | null
+      }>
       let successCount: number
 
       if (operation === 'delete') {

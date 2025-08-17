@@ -1,4 +1,4 @@
-import { create } from 'zustand'
+import { createWithEqualityFn } from 'zustand/traditional'
 import { devtools } from 'zustand/middleware'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateCreativeWorkflowName } from '@/lib/naming'
@@ -256,7 +256,7 @@ export function isWorkspaceInTransition(): boolean {
   return isWorkspaceTransitioning
 }
 
-export const useWorkflowRegistry = create<WorkflowRegistry>()(
+export const useWorkflowRegistry = createWithEqualityFn<WorkflowRegistry>()(
   devtools(
     (set, get) => ({
       // Store state
@@ -308,7 +308,9 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
 
           logger.info(`Successfully switched to workspace: ${workspaceId}`)
         } catch (error) {
-          logger.error(`Error switching to workspace ${workspaceId}:`, { error })
+          logger.error(`Error switching to workspace ${workspaceId}:`, {
+            error,
+          })
           set({
             error: `Failed to switch workspace: ${error instanceof Error ? error.message : 'Unknown error'}`,
             isLoading: false,
@@ -402,7 +404,9 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
         // Update the registry's deployment status for this specific workflow
         set((state) => {
           const deploymentStatuses = state.deploymentStatuses || {}
-          const currentStatus = deploymentStatuses[workflowId as string] || { isDeployed: false }
+          const currentStatus = deploymentStatuses[workflowId as string] || {
+            isDeployed: false,
+          }
 
           return {
             deploymentStatuses: {
@@ -437,8 +441,11 @@ export const useWorkflowRegistry = create<WorkflowRegistry>()(
           useWorkflowStore.getState().sync.forceSync()
         }
 
-        // Fetch workflow state from database
-        const response = await fetch(`/api/workflows/${id}`, { method: 'GET' })
+        // Fetch workflow state from database (include cookies for SIWE session)
+        const response = await fetch(`/api/workflows/${id}`, {
+          method: 'GET',
+          credentials: 'include',
+        })
         const workflowData = response.ok ? (await response.json()).data : null
 
         let workflowState: any

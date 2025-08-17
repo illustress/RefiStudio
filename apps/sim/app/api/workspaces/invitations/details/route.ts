@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { db } from '@/db'
 import { workspace, workspaceInvitation } from '@/db/schema'
 
@@ -14,9 +14,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Token is required' }, { status: 400 })
   }
 
-  const session = await getSession()
+  const auth = await checkHybridAuth(req as any)
 
-  if (!session?.user?.id) {
+  if (!auth?.success || !auth.userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

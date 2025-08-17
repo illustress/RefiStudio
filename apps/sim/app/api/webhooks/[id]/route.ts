@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import { db } from '@/db'
@@ -18,8 +18,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const { id } = await params
     logger.debug(`[${requestId}] Fetching webhook with ID: ${id}`)
 
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(request as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized webhook access attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -50,14 +50,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     let hasAccess = false
 
     // Case 1: User owns the workflow
-    if (webhookData.workflow.userId === session.user.id) {
+    if (webhookData.workflow.userId === auth.userId) {
       hasAccess = true
     }
 
     // Case 2: Workflow belongs to a workspace and user has any permission
     if (!hasAccess && webhookData.workflow.workspaceId) {
       const userPermission = await getUserEntityPermissions(
-        session.user.id,
+        auth.userId!,
         'workspace',
         webhookData.workflow.workspaceId
       )
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     if (!hasAccess) {
-      logger.warn(`[${requestId}] User ${session.user.id} denied access to webhook: ${id}`)
+      logger.warn(`[${requestId}] User ${auth.userId} denied access to webhook: ${id}`)
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
@@ -87,8 +87,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const { id } = await params
     logger.debug(`[${requestId}] Updating webhook with ID: ${id}`)
 
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(request as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized webhook update attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -122,14 +122,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     let canModify = false
 
     // Case 1: User owns the workflow
-    if (webhookData.workflow.userId === session.user.id) {
+    if (webhookData.workflow.userId === auth.userId) {
       canModify = true
     }
 
     // Case 2: Workflow belongs to a workspace and user has write or admin permission
     if (!canModify && webhookData.workflow.workspaceId) {
       const userPermission = await getUserEntityPermissions(
-        session.user.id,
+        auth.userId!,
         'workspace',
         webhookData.workflow.workspaceId
       )
@@ -139,9 +139,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
 
     if (!canModify) {
-      logger.warn(
-        `[${requestId}] User ${session.user.id} denied permission to modify webhook: ${id}`
-      )
+      logger.warn(`[${requestId}] User ${auth.userId} denied permission to modify webhook: ${id}`)
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
@@ -185,8 +183,8 @@ export async function DELETE(
     const { id } = await params
     logger.debug(`[${requestId}] Deleting webhook with ID: ${id}`)
 
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(request as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized webhook deletion attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -217,14 +215,14 @@ export async function DELETE(
     let canDelete = false
 
     // Case 1: User owns the workflow
-    if (webhookData.workflow.userId === session.user.id) {
+    if (webhookData.workflow.userId === auth.userId) {
       canDelete = true
     }
 
     // Case 2: Workflow belongs to a workspace and user has write or admin permission
     if (!canDelete && webhookData.workflow.workspaceId) {
       const userPermission = await getUserEntityPermissions(
-        session.user.id,
+        auth.userId!,
         'workspace',
         webhookData.workflow.workspaceId
       )
@@ -234,9 +232,7 @@ export async function DELETE(
     }
 
     if (!canDelete) {
-      logger.warn(
-        `[${requestId}] User ${session.user.id} denied permission to delete webhook: ${id}`
-      )
+      logger.warn(`[${requestId}] User ${auth.userId} denied permission to delete webhook: ${id}`)
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
@@ -245,7 +241,9 @@ export async function DELETE(
     // If it's a Telegram webhook, delete it from Telegram first
     if (foundWebhook.provider === 'telegram') {
       try {
-        const { botToken } = foundWebhook.providerConfig as { botToken: string }
+        const { botToken } = foundWebhook.providerConfig as {
+          botToken: string
+        }
 
         if (!botToken) {
           logger.warn(`[${requestId}] Missing botToken for Telegram webhook deletion.`, {
@@ -274,7 +272,10 @@ export async function DELETE(
             response: responseBody,
           })
           return NextResponse.json(
-            { error: 'Failed to delete webhook from Telegram', details: errorMessage },
+            {
+              error: 'Failed to delete webhook from Telegram',
+              details: errorMessage,
+            },
             { status: 500 }
           )
         }

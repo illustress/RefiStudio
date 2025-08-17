@@ -1,6 +1,6 @@
 import { and, eq, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { db } from '@/db'
 import { member, permissions, user, workspace } from '@/db/schema'
@@ -16,9 +16,9 @@ const logger = createLogger('OrganizationWorkspacesAPI')
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await getSession()
+    const auth = await checkHybridAuth(request as any)
 
-    if (!session?.user?.id) {
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const memberEntry = await db
       .select()
       .from(member)
-      .where(and(eq(member.organizationId, organizationId), eq(member.userId, session.user.id)))
+      .where(and(eq(member.organizationId, organizationId), eq(member.userId, auth.userId!)))
       .limit(1)
 
     if (memberEntry.length === 0) {

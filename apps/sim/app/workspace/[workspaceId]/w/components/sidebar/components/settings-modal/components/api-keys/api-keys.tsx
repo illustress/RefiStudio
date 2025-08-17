@@ -59,11 +59,11 @@ export function ApiKeys({ onOpenChange }: ApiKeysProps) {
 
   // Fetch API keys
   const fetchApiKeys = async () => {
-    if (!userId) return
-
     setIsLoading(true)
     try {
-      const response = await fetch('/api/users/me/api-keys')
+      const response = await fetch('/api/users/me/api-keys', {
+        credentials: 'include',
+      })
       if (response.ok) {
         const data = await response.json()
         setApiKeys(data.keys || [])
@@ -77,7 +77,7 @@ export function ApiKeys({ onOpenChange }: ApiKeysProps) {
 
   // Generate a new API key
   const handleCreateKey = async () => {
-    if (!userId || !newKeyName.trim()) return
+    if (!newKeyName.trim()) return
 
     setIsCreating(true)
     try {
@@ -89,6 +89,7 @@ export function ApiKeys({ onOpenChange }: ApiKeysProps) {
         body: JSON.stringify({
           name: newKeyName.trim(),
         }),
+        credentials: 'include',
       })
 
       if (response.ok) {
@@ -110,11 +111,12 @@ export function ApiKeys({ onOpenChange }: ApiKeysProps) {
 
   // Delete an API key
   const handleDeleteKey = async () => {
-    if (!userId || !deleteKey) return
+    if (!deleteKey) return
 
     try {
       const response = await fetch(`/api/users/me/api-keys/${deleteKey.id}`, {
         method: 'DELETE',
+        credentials: 'include',
       })
 
       if (response.ok) {
@@ -138,10 +140,8 @@ export function ApiKeys({ onOpenChange }: ApiKeysProps) {
 
   // Load API keys on mount
   useEffect(() => {
-    if (userId) {
-      fetchApiKeys()
-    }
-  }, [userId])
+    fetchApiKeys()
+  }, [])
 
   // Format date
   const formatDate = (dateString?: string) => {

@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 
 export const dynamic = 'force-dynamic'
@@ -12,8 +12,8 @@ import { chat } from '@/db/schema'
 const logger = createLogger('SubdomainValidateAPI')
 
 export async function GET(request: Request) {
-  const session = await getSession()
-  if (!session || !session.user) {
+  const auth = await checkHybridAuth(request as any)
+  if (!auth?.success || !auth.userId) {
     return createErrorResponse('Unauthorized', 401)
   }
 

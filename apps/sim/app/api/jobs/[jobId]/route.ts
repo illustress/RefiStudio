@@ -1,7 +1,7 @@
 import { runs } from '@trigger.dev/sdk/v3'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { db } from '@/db'
 
@@ -22,9 +22,9 @@ export async function GET(
   try {
     logger.debug(`[${requestId}] Getting status for task: ${taskId}`)
 
-    // Try session auth first (for web UI)
-    const session = await getSession()
-    let authenticatedUserId: string | null = session?.user?.id || null
+    // Try hybrid auth first (for web UI and SIWE)
+    const auth = await checkHybridAuth(request as any)
+    let authenticatedUserId: string | null = auth?.userId || null
 
     if (!authenticatedUserId) {
       const apiKeyHeader = request.headers.get('x-api-key')

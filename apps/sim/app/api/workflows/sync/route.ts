@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import { and, eq, isNull } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 
 export const dynamic = 'force-dynamic'
@@ -39,14 +39,14 @@ export async function GET(request: Request) {
   const workspaceId = url.searchParams.get('workspaceId')
 
   try {
-    // Get the session directly in the API route
-    const session = await getSession()
-    if (!session?.user?.id) {
+    // Accept Better Auth session, API key, internal JWT, or SIWE
+    const auth = await checkHybridAuth(request as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized workflow access attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userId = session.user.id
+    const userId = auth.userId
 
     // If workspaceId is provided, verify it exists and user is a member
     if (workspaceId) {
@@ -75,7 +75,10 @@ export async function GET(request: Request) {
           `[${requestId}] User ${userId} attempted to access workspace ${workspaceId} without membership`
         )
         return NextResponse.json(
-          { error: 'Access denied to this workspace', code: 'WORKSPACE_ACCESS_DENIED' },
+          {
+            error: 'Access denied to this workspace',
+            code: 'WORKSPACE_ACCESS_DENIED',
+          },
           { status: 403 }
         )
       }

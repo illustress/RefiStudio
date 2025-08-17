@@ -2,7 +2,7 @@ import crypto from 'crypto'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 
 export const dynamic = 'force-dynamic'
@@ -28,8 +28,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const requestId = crypto.randomUUID().slice(0, 8)
   const startTime = Date.now()
 
-  const session = await getSession()
-  if (!session?.user?.id) {
+  const auth = await checkHybridAuth(req as any)
+  if (!auth?.success || !auth.userId) {
     logger.warn(`[${requestId}] Unauthorized workflow duplication attempt for ${sourceWorkflowId}`)
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -38,9 +38,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const body = await req.json()
     const { name, description, color, workspaceId, folderId } = DuplicateRequestSchema.parse(body)
 
-    logger.info(
-      `[${requestId}] Duplicating workflow ${sourceWorkflowId} for user ${session.user.id}`
-    )
+    logger.info(`[${requestId}] Duplicating workflow ${sourceWorkflowId} for user ${auth.userId}`)
 
     // Generate new workflow ID
     const newWorkflowId = crypto.randomUUID()
@@ -65,14 +63,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       let canAccessSource = false
 
       // Case 1: User owns the workflow
-      if (source.userId === session.user.id) {
+      if (source.userId === auth.userId) {
         canAccessSource = true
       }
 
       // Case 2: User has admin or write permission in the source workspace
       if (!canAccessSource && source.workspaceId) {
         const userPermission = await getUserEntityPermissions(
-          session.user.id,
+          auth.userId!,
           'workspace',
           source.workspaceId
         )
@@ -88,7 +86,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // Create the new workflow first (required for foreign key constraints)
       await tx.insert(workflow).values({
         id: newWorkflowId,
-        userId: session.user.id,
+        userId: auth.userId!,
         workspaceId: workspaceId || source.workspaceId,
         folderId: folderId || source.folderId,
         name,
@@ -225,7 +223,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                 | ParallelConfig
 
               // Update the config ID to match the new subflow ID
-
               ;(updatedConfig as any).id = newSubflowId
 
               // Update node references in config if they exist
@@ -380,14 +377,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
       if (error.message === 'Source workflow not found or access denied') {
         logger.warn(
-          `[${requestId}] User ${session.user.id} denied access to source workflow ${sourceWorkflowId}`
+          `[${requestId}] User ${auth.userId} denied access to source workflow ${sourceWorkflowId}`
         )
         return NextResponse.json({ error: 'Access denied' }, { status: 403 })
       }
     }
 
     if (error instanceof z.ZodError) {
-      logger.warn(`[${requestId}] Invalid duplication request data`, { errors: error.errors })
+      logger.warn(`[${requestId}] Invalid duplication request data`, {
+        errors: error.errors,
+      })
       return NextResponse.json(
         { error: 'Invalid request data', details: error.errors },
         { status: 400 }

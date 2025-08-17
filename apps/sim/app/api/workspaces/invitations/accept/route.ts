@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { env } from '@/lib/env'
 import { db } from '@/db'
 import { permissions, user, workspace, workspaceInvitation } from '@/db/schema'
@@ -22,9 +22,9 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  const session = await getSession()
+  const auth = await checkHybridAuth(req as any)
 
-  if (!session?.user?.id) {
+  if (!auth?.success || !auth.userId) {
     // No need to encode API URL as callback, just redirect to invite page
     // The middleware will handle proper login flow and return to invite page
     return NextResponse.redirect(
@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Get the user's email from the session
-    const userEmail = session.user.email.toLowerCase()
+    const userEmail = (auth as any).email?.toLowerCase?.() || ''
     const invitationEmail = invitation.email.toLowerCase()
 
     // Check if the logged-in user's email matches the invitation
@@ -98,12 +98,12 @@ export async function GET(req: NextRequest) {
       const userData = await db
         .select()
         .from(user)
-        .where(eq(user.id, session.user.id))
+        .where(eq(user.id, auth.userId!))
         .then((rows) => rows[0])
 
       return NextResponse.redirect(
         new URL(
-          `/invite/invite-error?reason=email-mismatch&details=${encodeURIComponent(`Invitation was sent to ${invitation.email}, but you're logged in as ${userData?.email || session.user.email}`)}`,
+          `/invite/invite-error?reason=email-mismatch&details=${encodeURIComponent(`Invitation was sent to ${invitation.email}, but you're logged in as ${userData?.email || userEmail || 'unknown'}`)}`,
           env.NEXT_PUBLIC_APP_URL || 'https://sim.ai'
         )
       )
@@ -133,7 +133,7 @@ export async function GET(req: NextRequest) {
         and(
           eq(permissions.entityId, invitation.workspaceId),
           eq(permissions.entityType, 'workspace'),
-          eq(permissions.userId, session.user.id)
+          eq(permissions.userId, auth.userId!)
         )
       )
       .then((rows) => rows[0])
@@ -163,7 +163,7 @@ export async function GET(req: NextRequest) {
         id: randomUUID(),
         entityType: 'workspace' as const,
         entityId: invitation.workspaceId,
-        userId: session.user.id,
+        userId: auth.userId!,
         permissionType: invitation.permissions || 'read',
         createdAt: new Date(),
         updatedAt: new Date(),

@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 
 export const dynamic = 'force-dynamic'
@@ -14,9 +14,9 @@ const logger = createLogger('RateLimitAPI')
 
 export async function GET(request: NextRequest) {
   try {
-    // Try session auth first (for web UI)
-    const session = await getSession()
-    let authenticatedUserId: string | null = session?.user?.id || null
+    // Try hybrid auth first (for web UI + SIWE)
+    const auth = await checkHybridAuth(request as any)
+    let authenticatedUserId: string | null = auth?.userId || null
 
     // If no session, check for API key auth
     if (!authenticatedUserId) {
@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
       | 'enterprise'
 
     const rateLimiter = new RateLimiter()
-    const isApiAuth = !session?.user?.id
+    const isApiAuth = !auth?.success
     const triggerType = isApiAuth ? 'api' : 'manual'
 
     const syncStatus = await rateLimiter.getRateLimitStatus(

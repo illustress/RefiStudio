@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
 import { db } from '@/db'
@@ -20,8 +20,8 @@ export async function GET(request: NextRequest) {
   const requestId = randomUUID().slice(0, 8)
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(request as any)
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'User not authenticated' }, { status: 401 })
     }
 
@@ -39,11 +39,11 @@ export async function GET(request: NextRequest) {
     }
 
     const credential = credentials[0]
-    if (credential.userId !== session.user.id) {
+    if (credential.userId !== auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 
-    const accessToken = await refreshAccessTokenIfNeeded(credentialId, session.user.id, requestId)
+    const accessToken = await refreshAccessTokenIfNeeded(credentialId, auth.userId!, requestId)
     if (!accessToken) {
       return NextResponse.json({ error: 'Failed to obtain valid access token' }, { status: 401 })
     }
@@ -64,7 +64,9 @@ export async function GET(request: NextRequest) {
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: { message: 'Unknown error' } }))
       return NextResponse.json(
-        { error: errorData.error?.message || 'Failed to fetch folders from OneDrive' },
+        {
+          error: errorData.error?.message || 'Failed to fetch folders from OneDrive',
+        },
         { status: response.status }
       )
     }

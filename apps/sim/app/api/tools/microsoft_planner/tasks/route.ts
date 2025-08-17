@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
 import { db } from '@/db'
@@ -14,9 +14,9 @@ export async function GET(request: NextRequest) {
   const requestId = randomUUID().slice(0, 8)
 
   try {
-    const session = await getSession()
+    const auth = await checkHybridAuth(request as any)
 
-    if (!session?.user?.id) {
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthenticated request rejected`)
       return NextResponse.json({ error: 'User not authenticated' }, { status: 401 })
     }
@@ -46,16 +46,16 @@ export async function GET(request: NextRequest) {
     const credential = credentials[0]
 
     // Check if the credential belongs to the user
-    if (credential.userId !== session.user.id) {
+    if (credential.userId !== auth.userId) {
       logger.warn(`[${requestId}] Unauthorized credential access attempt`, {
         credentialUserId: credential.userId,
-        requestUserId: session.user.id,
+        requestUserId: auth.userId,
       })
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 
     // Refresh access token if needed
-    const accessToken = await refreshAccessTokenIfNeeded(credentialId, session.user.id, requestId)
+    const accessToken = await refreshAccessTokenIfNeeded(credentialId, auth.userId!, requestId)
 
     if (!accessToken) {
       logger.error(`[${requestId}] Failed to obtain valid access token`)

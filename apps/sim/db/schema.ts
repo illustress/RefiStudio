@@ -37,6 +37,8 @@ export const user = pgTable('user', {
   createdAt: timestamp('created_at').notNull(),
   updatedAt: timestamp('updated_at').notNull(),
   stripeCustomerId: text('stripe_customer_id'),
+  // Wallet-based authentication (SIWE)
+  walletAddress: text('wallet_address').unique(),
 })
 
 export const session = pgTable('session', {

@@ -1,7 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { db } from '@/db'
 import { templateStars, templates } from '@/db/schema'
@@ -17,21 +17,19 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(request as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized star check attempt for template: ${id}`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    logger.debug(
-      `[${requestId}] Checking star status for template: ${id}, user: ${session.user.id}`
-    )
+    logger.debug(`[${requestId}] Checking star status for template: ${id}, user: ${auth.userId}`)
 
     // Check if the user has starred this template
     const starRecord = await db
       .select({ id: templateStars.id })
       .from(templateStars)
-      .where(and(eq(templateStars.templateId, id), eq(templateStars.userId, session.user.id)))
+      .where(and(eq(templateStars.templateId, id), eq(templateStars.userId, auth.userId!)))
       .limit(1)
 
     const isStarred = starRecord.length > 0
@@ -51,13 +49,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { id } = await params
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(request as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized star attempt for template: ${id}`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    logger.debug(`[${requestId}] Adding star for template: ${id}, user: ${session.user.id}`)
+    logger.debug(`[${requestId}] Adding star for template: ${id}, user: ${auth.userId}`)
 
     // Verify the template exists
     const templateExists = await db
@@ -75,7 +73,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const existingStar = await db
       .select({ id: templateStars.id })
       .from(templateStars)
-      .where(and(eq(templateStars.templateId, id), eq(templateStars.userId, session.user.id)))
+      .where(and(eq(templateStars.templateId, id), eq(templateStars.userId, auth.userId!)))
       .limit(1)
 
     if (existingStar.length > 0) {
@@ -88,7 +86,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       // Add the star record
       await tx.insert(templateStars).values({
         id: uuidv4(),
-        userId: session.user.id,
+        userId: auth.userId!,
         templateId: id,
         starredAt: new Date(),
         createdAt: new Date(),
@@ -127,19 +125,19 @@ export async function DELETE(
   const { id } = await params
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(request as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized unstar attempt for template: ${id}`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    logger.debug(`[${requestId}] Removing star for template: ${id}, user: ${session.user.id}`)
+    logger.debug(`[${requestId}] Removing star for template: ${id}, user: ${auth.userId}`)
 
     // Check if the star exists
     const existingStar = await db
       .select({ id: templateStars.id })
       .from(templateStars)
-      .where(and(eq(templateStars.templateId, id), eq(templateStars.userId, session.user.id)))
+      .where(and(eq(templateStars.templateId, id), eq(templateStars.userId, auth.userId!)))
       .limit(1)
 
     if (existingStar.length === 0) {
@@ -152,7 +150,7 @@ export async function DELETE(
       // Remove the star record
       await tx
         .delete(templateStars)
-        .where(and(eq(templateStars.templateId, id), eq(templateStars.userId, session.user.id)))
+        .where(and(eq(templateStars.templateId, id), eq(templateStars.userId, auth.userId!)))
 
       // Decrement the star count (prevent negative values)
       await tx

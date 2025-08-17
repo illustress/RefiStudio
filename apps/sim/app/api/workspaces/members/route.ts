@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { hasAdminPermission } from '@/lib/permissions/utils'
 import { db } from '@/db'
 import { permissions, type permissionTypeEnum, user } from '@/db/schema'
@@ -11,9 +11,9 @@ export const dynamic = 'force-dynamic'
 
 // Add a member to a workspace
 export async function POST(req: Request) {
-  const session = await getSession()
+  const auth = await checkHybridAuth(req as any)
 
-  if (!session?.user?.id) {
+  if (!auth?.success || !auth.userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -31,13 +31,15 @@ export async function POST(req: Request) {
     const validPermissions: PermissionType[] = ['admin', 'write', 'read']
     if (!validPermissions.includes(permission)) {
       return NextResponse.json(
-        { error: `Invalid permission: must be one of ${validPermissions.join(', ')}` },
+        {
+          error: `Invalid permission: must be one of ${validPermissions.join(', ')}`,
+        },
         { status: 400 }
       )
     }
 
     // Check if current user has admin permission for the workspace
-    const hasAdmin = await hasAdminPermission(session.user.id, workspaceId)
+    const hasAdmin = await hasAdminPermission(auth.userId, workspaceId)
 
     if (!hasAdmin) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })

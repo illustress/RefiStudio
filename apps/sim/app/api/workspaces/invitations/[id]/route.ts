@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { hasWorkspaceAdminAccess } from '@/lib/permissions/utils'
 import { db } from '@/db'
 import { workspaceInvitation } from '@/db/schema'
@@ -10,9 +10,9 @@ export const dynamic = 'force-dynamic'
 // DELETE /api/workspaces/invitations/[id] - Delete a workspace invitation
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const session = await getSession()
+  const auth = await checkHybridAuth(req as any)
 
-  if (!session?.user?.id) {
+  if (!auth?.success || !auth.userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -35,7 +35,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     }
 
     // Check if current user has admin access to the workspace
-    const hasAdminAccess = await hasWorkspaceAdminAccess(session.user.id, invitation.workspaceId)
+    const hasAdminAccess = await hasWorkspaceAdminAccess(auth.userId, invitation.workspaceId)
 
     if (!hasAdminAccess) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })

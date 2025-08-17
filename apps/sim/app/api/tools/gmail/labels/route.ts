@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
 import { db } from '@/db'
@@ -23,10 +23,10 @@ export async function GET(request: NextRequest) {
 
   try {
     // Get the session
-    const session = await getSession()
+    const auth = await checkHybridAuth(request as any)
 
     // Check if the user is authenticated
-    if (!session?.user?.id) {
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthenticated labels request rejected`)
       return NextResponse.json({ error: 'User not authenticated' }, { status: 401 })
     }
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
     let credentials = await db
       .select()
       .from(account)
-      .where(and(eq(account.id, credentialId), eq(account.userId, session.user.id)))
+      .where(and(eq(account.id, credentialId), eq(account.userId, auth.userId!)))
       .limit(1)
 
     if (!credentials.length) {

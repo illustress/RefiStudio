@@ -33,7 +33,7 @@
     "formatWithErrors": false,
     "indentStyle": "space",
     "indentWidth": 2,
-    "lineEnding": "lf",
+    "lineEnding": "crlf",
     "lineWidth": 100,
     "attributePosition": "auto",
     "bracketSpacing": true,

@@ -69,7 +69,7 @@ export const buildTimeCSPDirectives: CSPDirectives = {
 
   'media-src': ["'self'", 'blob:'],
 
-  'font-src': ["'self'", 'https://fonts.gstatic.com'],
+  'font-src': ["'self'", 'https://fonts.gstatic.com', 'https://rsms.me'],
 
   'connect-src': [
     "'self'",
@@ -97,6 +97,11 @@ export const buildTimeCSPDirectives: CSPDirectives = {
     'https://*.vercel.app',
     'wss://*.vercel.app',
     'https://pro.ip-api.com',
+    // Web3 / WalletConnect / RPC endpoints used by Onboard & ENS lookups
+    'https://cloudflare-eth.com',
+    'https://rpc.ankr.com',
+    'wss://relay.walletconnect.com',
+    'https://rpc.walletconnect.com',
   ],
 
   // Google Picker and Drive integration

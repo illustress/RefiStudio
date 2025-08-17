@@ -28,7 +28,6 @@ export function Credentials({ onOpenChange }: CredentialsProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { data: session } = useSession()
-  const userId = session?.user?.id
   const pendingServiceRef = useRef<HTMLDivElement>(null)
 
   const [services, setServices] = useState<ServiceInfo[]>([])
@@ -60,15 +59,15 @@ export function Credentials({ onOpenChange }: CredentialsProps) {
 
   // Fetch services and their connection status
   const fetchServices = async () => {
-    if (!userId) return
-
     setIsLoading(true)
     try {
       // Start with the base service definitions
       const serviceDefinitions = defineServices()
 
       // Fetch all OAuth connections for the user
-      const response = await fetch('/api/auth/oauth/connections')
+      const response = await fetch('/api/auth/oauth/connections', {
+        credentials: 'include',
+      })
       if (response.ok) {
         const data = await response.json()
         const connections = data.connections || []
@@ -167,9 +166,7 @@ export function Credentials({ onOpenChange }: CredentialsProps) {
       setAuthSuccess(true)
 
       // Refresh connections to show the new connection
-      if (userId) {
-        fetchServices()
-      }
+      fetchServices()
 
       // Clear the URL parameters
       router.replace('/workspace')
@@ -177,14 +174,13 @@ export function Credentials({ onOpenChange }: CredentialsProps) {
       logger.error('OAuth error:', { error })
       router.replace('/workspace')
     }
-  }, [searchParams, router, userId])
+  }, [searchParams, router])
 
-  // Fetch services on mount
+  // Fetch services on mount (supports SIWE via cookie)
   useEffect(() => {
-    if (userId) {
-      fetchServices()
-    }
-  }, [userId])
+    fetchServices()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Handle connect button click
   const handleConnect = async (service: ServiceInfo) => {
@@ -221,6 +217,7 @@ export function Credentials({ onOpenChange }: CredentialsProps) {
           provider: service.providerId.split('-')[0],
           providerId: service.providerId,
         }),
+        credentials: 'include',
       })
 
       if (response.ok) {

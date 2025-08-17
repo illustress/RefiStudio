@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { generateApiKey } from '@/lib/utils'
 import { db } from '@/db'
@@ -14,12 +14,12 @@ export const dynamic = 'force-dynamic'
 // GET /api/users/me/api-keys - Get all API keys for the current user
 export async function GET(request: NextRequest) {
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(request)
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userId = session.user.id
+    const userId = auth.userId
 
     // Fetch all API keys for this user
     const keys = await db
@@ -50,12 +50,12 @@ export async function GET(request: NextRequest) {
 // POST /api/users/me/api-keys - Create a new API key
 export async function POST(request: NextRequest) {
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(request)
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userId = session.user.id
+    const userId = auth.userId
     const body = await request.json()
 
     // Validate the request

@@ -1,4 +1,4 @@
-import { create } from 'zustand'
+import { createWithEqualityFn } from 'zustand/traditional'
 import { createLogger } from '@/lib/logs/console/logger'
 
 const logger = createLogger('OperationQueue')
@@ -61,7 +61,7 @@ export function registerEmitFunctions(
   emitVariableUpdate = variableEmit
 }
 
-export const useOperationQueueStore = create<OperationQueueState>((set, get) => ({
+export const useOperationQueueStore = createWithEqualityFn<OperationQueueState>((set, get) => ({
   operations: [],
   isProcessing: false,
   hasOperationError: false,
@@ -324,7 +324,9 @@ export const useOperationQueueStore = create<OperationQueueState>((set, get) => 
     }
 
     if (!retryable) {
-      logger.debug('Operation marked as non-retryable, removing from queue', { operationId })
+      logger.debug('Operation marked as non-retryable, removing from queue', {
+        operationId,
+      })
 
       set((state) => ({
         operations: state.operations.filter((op) => op.id !== operationId),
@@ -371,7 +373,9 @@ export const useOperationQueueStore = create<OperationQueueState>((set, get) => 
     const state = get()
     const operation = state.operations.find((op) => op.id === operationId)
     if (!operation) {
-      logger.debug('Ignoring timeout for operation not in queue', { operationId })
+      logger.debug('Ignoring timeout for operation not in queue', {
+        operationId,
+      })
       return
     }
 

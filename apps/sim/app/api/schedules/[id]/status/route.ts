@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
 
@@ -17,8 +17,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const scheduleId = id
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(req as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized schedule status request`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -54,12 +54,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     // Check authorization - either the user owns the workflow or has workspace permissions
-    let isAuthorized = workflowRecord.userId === session.user.id
+    let isAuthorized = workflowRecord.userId === auth.userId
 
     // If not authorized by ownership and the workflow belongs to a workspace, check workspace permissions
     if (!isAuthorized && workflowRecord.workspaceId) {
       const userPermission = await getUserEntityPermissions(
-        session.user.id,
+        auth.userId!,
         'workspace',
         workflowRecord.workspaceId
       )

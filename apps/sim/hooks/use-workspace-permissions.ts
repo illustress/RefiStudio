@@ -43,7 +43,9 @@ export function useWorkspacePermissions(workspaceId: string | null): UseWorkspac
       setLoading(true)
       setError(null)
 
-      const response = await fetch(API_ENDPOINTS.WORKSPACE_PERMISSIONS(id))
+      const response = await fetch(API_ENDPOINTS.WORKSPACE_PERMISSIONS(id), {
+        credentials: 'include',
+      })
 
       if (!response.ok) {
         if (response.status === 404) {
@@ -61,7 +63,10 @@ export function useWorkspacePermissions(workspaceId: string | null): UseWorkspac
       logger.info('Workspace permissions loaded', {
         workspaceId: id,
         userCount: data.total,
-        users: data.users.map((u) => ({ email: u.email, permissions: u.permissionType })),
+        users: data.users.map((u) => ({
+          email: u.email,
+          permissions: u.permissionType,
+        })),
       })
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred'

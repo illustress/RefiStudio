@@ -2,7 +2,7 @@ import crypto from 'crypto'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import {
@@ -78,8 +78,8 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(req as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized schedule query attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -100,12 +100,12 @@ export async function GET(req: NextRequest) {
     }
 
     // Check authorization - either the user owns the workflow or has workspace permissions
-    let isAuthorized = workflowRecord.userId === session.user.id
+    let isAuthorized = workflowRecord.userId === auth.userId
 
     // If not authorized by ownership and the workflow belongs to a workspace, check workspace permissions
     if (!isAuthorized && workflowRecord.workspaceId) {
       const userPermission = await getUserEntityPermissions(
-        session.user.id,
+        auth.userId!,
         'workspace',
         workflowRecord.workspaceId
       )
@@ -170,8 +170,8 @@ export async function POST(req: NextRequest) {
   const requestId = crypto.randomUUID().slice(0, 8)
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(req as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized schedule update attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -194,12 +194,12 @@ export async function POST(req: NextRequest) {
     }
 
     // Check authorization - either the user owns the workflow or has write/admin workspace permissions
-    let isAuthorized = workflowRecord.userId === session.user.id
+    let isAuthorized = workflowRecord.userId === auth.userId
 
     // If not authorized by ownership and the workflow belongs to a workspace, check workspace permissions
     if (!isAuthorized && workflowRecord.workspaceId) {
       const userPermission = await getUserEntityPermissions(
-        session.user.id,
+        auth.userId!,
         'workspace',
         workflowRecord.workspaceId
       )

@@ -2,7 +2,7 @@ import { and, desc, eq, ilike, or, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { db } from '@/db'
 import { templateStars, templates, workflow } from '@/db/schema'
@@ -84,8 +84,8 @@ export async function GET(request: NextRequest) {
   const requestId = crypto.randomUUID().slice(0, 8)
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(request)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized templates access attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -136,7 +136,7 @@ export async function GET(request: NextRequest) {
       .from(templates)
       .leftJoin(
         templateStars,
-        and(eq(templateStars.templateId, templates.id), eq(templateStars.userId, session.user.id))
+        and(eq(templateStars.templateId, templates.id), eq(templateStars.userId, auth.userId))
       )
       .where(whereCondition)
       .orderBy(desc(templates.views), desc(templates.createdAt))
@@ -165,7 +165,9 @@ export async function GET(request: NextRequest) {
     })
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      logger.warn(`[${requestId}] Invalid query parameters`, { errors: error.errors })
+      logger.warn(`[${requestId}] Invalid query parameters`, {
+        errors: error.errors,
+      })
       return NextResponse.json(
         { error: 'Invalid query parameters', details: error.errors },
         { status: 400 }
@@ -182,8 +184,8 @@ export async function POST(request: NextRequest) {
   const requestId = crypto.randomUUID().slice(0, 8)
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(request)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized template creation attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -219,7 +221,7 @@ export async function POST(request: NextRequest) {
     const newTemplate = {
       id: templateId,
       workflowId: data.workflowId,
-      userId: session.user.id,
+      userId: auth.userId,
       name: data.name,
       description: data.description || null,
       author: data.author,
@@ -246,7 +248,9 @@ export async function POST(request: NextRequest) {
     )
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      logger.warn(`[${requestId}] Invalid template data`, { errors: error.errors })
+      logger.warn(`[${requestId}] Invalid template data`, {
+        errors: error.errors,
+      })
       return NextResponse.json(
         { error: 'Invalid template data', details: error.errors },
         { status: 400 }

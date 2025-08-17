@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { and, eq, isNotNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { checkKnowledgeBaseAccess } from '@/app/api/knowledge/utils'
 import { db } from '@/db'
@@ -19,13 +19,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     logger.info(`[${requestId}] Getting tag usage statistics for knowledge base ${knowledgeBaseId}`)
 
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(req as any)
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     // Check if user has access to the knowledge base
-    const accessCheck = await checkKnowledgeBaseAccess(knowledgeBaseId, session.user.id)
+    const accessCheck = await checkKnowledgeBaseAccess(knowledgeBaseId, auth.userId!)
     if (!accessCheck.hasAccess) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }

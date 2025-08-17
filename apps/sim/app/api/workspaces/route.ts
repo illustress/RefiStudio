@@ -1,20 +1,24 @@
 import crypto from 'crypto'
 import { and, desc, eq, isNull } from 'drizzle-orm'
+import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
+import { decodeAndVerifySiweCookie } from '@/lib/auth/siwe-cookie'
 import { db } from '@/db'
 import { permissions, workflow, workflowBlocks, workspace } from '@/db/schema'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 
 const logger = createLogger('Workspaces')
 
 // Get all workspaces for the current user
-export async function GET() {
-  const session = await getSession()
+export async function GET(request: NextRequest) {
+  const auth = await checkHybridAuth(request as any)
 
-  if (!session?.user?.id) {
+  if (!auth?.success || !auth.userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
+  const userId = auth.userId
 
   // Get all workspaces where the user has permissions
   const userWorkspaces = await db
@@ -24,21 +28,33 @@ export async function GET() {
     })
     .from(permissions)
     .innerJoin(workspace, eq(permissions.entityId, workspace.id))
-    .where(and(eq(permissions.userId, session.user.id), eq(permissions.entityType, 'workspace')))
+    .where(and(eq(permissions.userId, userId), eq(permissions.entityType, 'workspace')))
     .orderBy(desc(workspace.createdAt))
 
   if (userWorkspaces.length === 0) {
-    // Create a default workspace for the user
-    const defaultWorkspace = await createDefaultWorkspace(session.user.id, session.user.name)
-
-    // Migrate existing workflows to the default workspace
-    await migrateExistingWorkflows(session.user.id, defaultWorkspace.id)
-
-    return NextResponse.json({ workspaces: [defaultWorkspace] })
+    // Auto-create a default workspace on first SIWE login only
+    try {
+      const cookie = request.cookies.get('siwe_session')?.value
+      const payload = decodeAndVerifySiweCookie(cookie)
+      if (payload?.uid === userId) {
+        const newWorkspace = await createDefaultWorkspace(userId)
+        return NextResponse.json({
+          workspaces: [
+            {
+              ...newWorkspace,
+              role: 'owner',
+              permissions: 'admin',
+            },
+          ],
+        })
+      }
+    } catch {}
+    // Not SIWE, or invalid cookie: return empty list
+    return NextResponse.json({ workspaces: [] })
   }
 
   // If user has workspaces but might have orphaned workflows, migrate them
-  await ensureWorkflowsHaveWorkspace(session.user.id, userWorkspaces[0].workspace.id)
+  await ensureWorkflowsHaveWorkspace(userId, userWorkspaces[0].workspace.id)
 
   // Format the response with permission information
   const workspacesWithPermissions = userWorkspaces.map(
@@ -53,10 +69,10 @@ export async function GET() {
 }
 
 // POST /api/workspaces - Create a new workspace
-export async function POST(req: Request) {
-  const session = await getSession()
+export async function POST(req: NextRequest) {
+  const auth = await checkHybridAuth(req as any)
 
-  if (!session?.user?.id) {
+  if (!auth?.success || !auth.userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -67,7 +83,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
     }
 
-    const newWorkspace = await createWorkspace(session.user.id, name)
+    const newWorkspace = await createWorkspace(auth.userId, name)
 
     return NextResponse.json({ workspace: newWorkspace })
   } catch (error) {

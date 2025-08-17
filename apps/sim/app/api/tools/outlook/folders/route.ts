@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
 import { db } from '@/db'
@@ -19,7 +19,7 @@ interface OutlookFolder {
 
 export async function GET(request: Request) {
   try {
-    const session = await getSession()
+    const auth = await checkHybridAuth(request as any)
     const { searchParams } = new URL(request.url)
     const credentialId = searchParams.get('credentialId')
 
@@ -30,9 +30,9 @@ export async function GET(request: Request) {
 
     try {
       // Ensure we have a session for permission checks
-      const sessionUserId = session?.user?.id || ''
+      const sessionUserId = auth?.userId || ''
 
-      if (!sessionUserId) {
+      if (!auth?.success || !sessionUserId) {
         logger.error('No user ID found in session')
         return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
       }
@@ -52,7 +52,10 @@ export async function GET(request: Request) {
       )
 
       if (!accessToken) {
-        logger.error('Failed to get access token', { credentialId, userId: credentialOwnerUserId })
+        logger.error('Failed to get access token', {
+          credentialId,
+          userId: credentialOwnerUserId,
+        })
         return NextResponse.json(
           {
             error: 'Could not retrieve access token',

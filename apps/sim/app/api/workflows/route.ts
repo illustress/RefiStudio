@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { db } from '@/db'
 import { workflow, workflowBlocks } from '@/db/schema'
@@ -22,9 +22,8 @@ const CreateWorkflowSchema = z.object({
 // POST /api/workflows - Create a new workflow
 export async function POST(req: NextRequest) {
   const requestId = crypto.randomUUID().slice(0, 8)
-  const session = await getSession()
-
-  if (!session?.user?.id) {
+  const auth = await checkHybridAuth(req)
+  if (!auth?.success || !auth.userId) {
     logger.warn(`[${requestId}] Unauthorized workflow creation attempt`)
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -37,7 +36,7 @@ export async function POST(req: NextRequest) {
     const starterId = crypto.randomUUID()
     const now = new Date()
 
-    logger.info(`[${requestId}] Creating workflow ${workflowId} for user ${session.user.id}`)
+    logger.info(`[${requestId}] Creating workflow ${workflowId} for user ${auth.userId}`)
 
     // Create initial state with start block
     const initialState = {
@@ -149,7 +148,7 @@ export async function POST(req: NextRequest) {
       // Create the workflow
       await tx.insert(workflow).values({
         id: workflowId,
-        userId: session.user.id,
+        userId: auth.userId!,
         workspaceId: workspaceId || null,
         folderId: folderId || null,
         name,

@@ -1,6 +1,6 @@
 import { and, eq, ne } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import {
   getOrganizationSeatAnalytics,
   getOrganizationSeatInfo,
@@ -18,9 +18,9 @@ const logger = createLogger('OrganizationAPI')
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await getSession()
+    const auth = await checkHybridAuth(request as any)
 
-    if (!session?.user?.id) {
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const memberEntry = await db
       .select()
       .from(member)
-      .where(and(eq(member.organizationId, organizationId), eq(member.userId, session.user.id)))
+      .where(and(eq(member.organizationId, organizationId), eq(member.userId, auth.userId!)))
       .limit(1)
 
     if (memberEntry.length === 0) {
@@ -104,9 +104,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
  */
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await getSession()
+    const auth = await checkHybridAuth(request as any)
 
-    if (!session?.user?.id) {
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -118,7 +118,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const memberEntry = await db
       .select()
       .from(member)
-      .where(and(eq(member.organizationId, organizationId), eq(member.userId, session.user.id)))
+      .where(and(eq(member.organizationId, organizationId), eq(member.userId, auth.userId!)))
       .limit(1)
 
     if (memberEntry.length === 0) {
@@ -138,7 +138,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         return NextResponse.json({ error: 'Invalid seat count' }, { status: 400 })
       }
 
-      const result = await updateOrganizationSeats(organizationId, seats, session.user.id)
+      const result = await updateOrganizationSeats(organizationId, seats, auth.userId!)
 
       if (!result.success) {
         return NextResponse.json({ error: result.error }, { status: 400 })
@@ -147,7 +147,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       logger.info('Organization seat count updated', {
         organizationId,
         newSeatCount: seats,
-        updatedBy: session.user.id,
+        updatedBy: auth.userId!,
       })
 
       return NextResponse.json({
@@ -215,7 +215,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
       logger.info('Organization settings updated', {
         organizationId,
-        updatedBy: session.user.id,
+        updatedBy: auth.userId!,
         changes: { name, slug, logo },
       })
 

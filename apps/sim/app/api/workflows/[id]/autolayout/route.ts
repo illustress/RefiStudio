@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import { simAgentClient } from '@/lib/sim-agent'
@@ -59,14 +59,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { id: workflowId } = await params
 
   try {
-    // Get the session
-    const session = await getSession()
-    if (!session?.user?.id) {
+    // Get hybrid auth
+    const auth = await checkHybridAuth(request as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized autolayout attempt for workflow ${workflowId}`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userId = session.user.id
+    const userId = auth.userId!
 
     // Parse request body
     const body = await request.json()
@@ -267,7 +267,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const elapsed = Date.now() - startTime
 
     if (error instanceof z.ZodError) {
-      logger.warn(`[${requestId}] Invalid autolayout request data`, { errors: error.errors })
+      logger.warn(`[${requestId}] Invalid autolayout request data`, {
+        errors: error.errors,
+      })
       return NextResponse.json(
         { error: 'Invalid request data', details: error.errors },
         { status: 400 }

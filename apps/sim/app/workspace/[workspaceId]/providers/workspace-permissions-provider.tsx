@@ -61,11 +61,9 @@ export function WorkspacePermissionsProvider({ children }: WorkspacePermissionsP
   // Get operation error state from collaborative workflow
   const { hasOperationError } = useCollaborativeWorkflow()
 
-  // Set offline mode when there are operation errors
+  // Reflect operation error state in offline mode (both directions)
   useEffect(() => {
-    if (hasOperationError) {
-      setIsOfflineMode(true)
-    }
+    setIsOfflineMode(hasOperationError)
   }, [hasOperationError])
 
   // Fetch workspace permissions and loading state
@@ -87,7 +85,9 @@ export function WorkspacePermissionsProvider({ children }: WorkspacePermissionsP
   // The 5-second operation timeout system will handle all error cases
 
   // Create connection-aware permissions that override user permissions when offline
-  const userPermissions = useMemo((): WorkspaceUserPermissions & { isOfflineMode?: boolean } => {
+  const userPermissions = useMemo((): WorkspaceUserPermissions & {
+    isOfflineMode?: boolean
+  } => {
     if (isOfflineMode) {
       // In offline mode, force read-only permissions regardless of actual user permissions
       return {

@@ -51,6 +51,7 @@ export function Account({ onOpenChange }: AccountProps) {
   // Get session data using the client hook
   const { data: session, isPending, error } = useSession()
   const [isLoadingUserData, _setIsLoadingUserData] = useState(false)
+  const [walletAddress, setWalletAddress] = useState<string | null>(null)
 
   // Reset password states
   const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false)
@@ -88,7 +89,47 @@ export function Account({ onOpenChange }: AccountProps) {
         // Pre-fill the reset password email with the current user's email
         setResetPasswordEmail(session.user.email)
       } else if (!isPending) {
-        // User is not logged in
+        // Fallback to SIWE cookie
+        try {
+          const res = await fetch('/api/auth/me', { credentials: 'include' })
+          if (res.ok) {
+            const me = (await res.json()) as {
+              userId: string | null
+              email: string | null
+              walletAddress: string | null
+            }
+            if (me?.walletAddress || me?.userId) {
+              const addr = me.walletAddress || null
+              setWalletAddress(addr)
+              const displayName = addr
+                ? `${addr.startsWith('0x') ? addr : `0x${addr}`}`.replace(
+                    /^(0x.{4}).*(.{4})$/,
+                    '$1…$2'
+                  )
+                : 'Wallet User'
+              const displayEmail = me.email || (addr ? `${addr.toLowerCase()}@wallet.user` : '')
+
+              setUserData({
+                isLoggedIn: true,
+                name: displayName,
+                email: displayEmail,
+              })
+
+              setAccounts([
+                {
+                  id: me.userId || 'wallet_user',
+                  name: displayName,
+                  email: displayEmail,
+                  isActive: true,
+                },
+              ])
+              setResetPasswordEmail(displayEmail)
+              return
+            }
+          }
+        } catch {}
+
+        // Not logged in
         setUserData({
           isLoggedIn: false,
           name: '',
@@ -114,6 +155,14 @@ export function Account({ onOpenChange }: AccountProps) {
 
       // Clear all user data to prevent persistence between accounts
       await clearUserData()
+
+      // Also clear SIWE session if present
+      try {
+        await fetch('/api/auth/siwe/logout', {
+          method: 'POST',
+          credentials: 'include',
+        })
+      } catch {}
 
       // Set a short timeout to improve perceived performance
       // while still ensuring auth state starts to clear
@@ -304,6 +353,25 @@ export function Account({ onOpenChange }: AccountProps) {
                       <Lock className='h-4 w-4' />
                       <span>Reset Password</span>
                     </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    {walletAddress && (
+                      <DropdownMenuItem
+                        className='flex cursor-pointer items-center gap-2 py-2.5 pl-3'
+                        onClick={async () => {
+                          try {
+                            await fetch('/api/auth/siwe/logout', {
+                              method: 'POST',
+                              credentials: 'include',
+                            })
+                          } catch {}
+                          setOpen(false)
+                          router.refresh()
+                        }}
+                      >
+                        <LogOut className='h-4 w-4' />
+                        <span>Disconnect Wallet</span>
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       className='flex cursor-pointer items-center gap-2 py-2.5 pl-3 text-destructive focus:text-destructive'

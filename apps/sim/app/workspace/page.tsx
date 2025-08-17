@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { LoadingAgent } from '@/components/ui/loading-agent'
 import { useSession } from '@/lib/auth-client'
@@ -11,6 +11,7 @@ const logger = createLogger('WorkspacePage')
 export default function WorkspacePage() {
   const router = useRouter()
   const { data: session, isPending } = useSession()
+  const [noWorkspaces, setNoWorkspaces] = useState(false)
 
   useEffect(() => {
     const redirectToFirstWorkspace = async () => {
@@ -19,11 +20,23 @@ export default function WorkspacePage() {
         return
       }
 
-      // If user is not authenticated, redirect to login
+      // If Better Auth session is missing, probe server auth to allow SIWE
       if (!session?.user) {
-        logger.info('User not authenticated, redirecting to login')
-        router.replace('/login')
-        return
+        try {
+          const probe = await fetch('/api/workspaces', {
+            credentials: 'include',
+          })
+          logger.info(`Hybrid auth probe status: ${probe.status}`)
+          if (probe.status === 401) {
+            logger.info('User not authenticated (hybrid check failed), redirecting to login')
+            router.replace('/login')
+            return
+          }
+        } catch (e) {
+          logger.info('Hybrid auth probe threw error, redirecting to login')
+          router.replace('/login')
+          return
+        }
       }
 
       try {
@@ -53,7 +66,9 @@ export default function WorkspacePage() {
         }
 
         // Fetch user's workspaces
-        const response = await fetch('/api/workspaces')
+        const response = await fetch('/api/workspaces', {
+          credentials: 'include',
+        })
 
         if (!response.ok) {
           throw new Error('Failed to fetch workspaces')
@@ -63,35 +78,8 @@ export default function WorkspacePage() {
         const workspaces = data.workspaces || []
 
         if (workspaces.length === 0) {
-          logger.warn('No workspaces found for user, creating default workspace')
-
-          try {
-            const createResponse = await fetch('/api/workspaces', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ name: 'My Workspace' }),
-            })
-
-            if (createResponse.ok) {
-              const createData = await createResponse.json()
-              const newWorkspace = createData.workspace
-
-              if (newWorkspace?.id) {
-                logger.info(`Created default workspace: ${newWorkspace.id}`)
-                router.replace(`/workspace/${newWorkspace.id}/w`)
-                return
-              }
-            }
-
-            logger.error('Failed to create default workspace')
-          } catch (createError) {
-            logger.error('Error creating default workspace:', createError)
-          }
-
-          // If we can't create a workspace, redirect to login to reset state
-          router.replace('/login')
+          // No workspaces; take user to workspace landing without auto-creating
+          logger.warn('No workspaces found for user; staying on landing page')
           return
         }
 

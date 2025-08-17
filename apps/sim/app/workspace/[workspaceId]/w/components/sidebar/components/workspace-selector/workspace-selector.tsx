@@ -77,6 +77,9 @@ export function WorkspaceSelector({
   const [deleteConfirmationName, setDeleteConfirmationName] = useState('')
   const [leaveConfirmationName, setLeaveConfirmationName] = useState('')
 
+  // Wallet info
+  const [walletAddress, setWalletAddress] = useState<string | null>(null)
+
   // Refs
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const editInputRef = useRef<HTMLInputElement>(null)
@@ -88,6 +91,35 @@ export function WorkspaceSelector({
       editInputRef.current.select()
     }
   }, [editingWorkspaceId])
+
+  // Load connected wallet address
+  useEffect(() => {
+    let cancelled = false
+    async function loadMe() {
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include' })
+        if (!res.ok) return
+        const data = (await res.json()) as {
+          userId: string | null
+          email: string | null
+          walletAddress: string | null
+        }
+        if (!cancelled) setWalletAddress(data.walletAddress || null)
+      } catch {
+        // ignore
+      }
+    }
+    loadMe()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  function truncateAddress(addr: string): string {
+    if (!addr) return ''
+    const a = addr.startsWith('0x') ? addr : `0x${addr}`
+    return `${a.slice(0, 6)}…${a.slice(-4)}`
+  }
 
   /**
    * Scroll to active workspace on load or when it changes
@@ -454,6 +486,18 @@ export function WorkspaceSelector({
     <>
       <div className='rounded-[10px] border bg-background shadow-xs'>
         <div className='flex h-full flex-col p-2'>
+          {/* Connected Wallet */}
+          {walletAddress && (
+            <div className='mb-2'>
+              <div className='mb-1 text-[11px] uppercase tracking-wide text-muted-foreground'>
+                Wallet
+              </div>
+              <div className='flex h-8 items-center rounded-[8px] bg-muted px-2 text-sm font-medium'>
+                <span className='truncate'>{truncateAddress(walletAddress)}</span>
+              </div>
+            </div>
+          )}
+
           {/* Workspace List */}
           <div className='min-h-0 flex-1'>
             <ScrollArea ref={scrollAreaRef} className='h-[104px]' hideScrollbar={true}>

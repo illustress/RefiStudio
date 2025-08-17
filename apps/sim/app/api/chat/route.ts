@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { env } from '@/lib/env'
 import { isDev } from '@/lib/environment'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -45,14 +45,14 @@ const chatSchema = z.object({
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getSession()
+    const auth = await checkHybridAuth(request as any)
 
-    if (!session) {
+    if (!auth?.success || !auth.userId) {
       return createErrorResponse('Unauthorized', 401)
     }
 
     // Get the user's chat deployments
-    const deployments = await db.select().from(chat).where(eq(chat.userId, session.user.id))
+    const deployments = await db.select().from(chat).where(eq(chat.userId, auth.userId!))
 
     return createSuccessResponse({ deployments })
   } catch (error: any) {
@@ -63,9 +63,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getSession()
+    const auth = await checkHybridAuth(request as any)
 
-    if (!session) {
+    if (!auth?.success || !auth.userId) {
       return createErrorResponse('Unauthorized', 401)
     }
 
@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
       // Check if user has permission to create chat for this workflow
       const { hasAccess, workflow: workflowRecord } = await checkWorkflowAccessForChatCreation(
         workflowId,
-        session.user.id
+        auth.userId!
       )
 
       if (!hasAccess || !workflowRecord) {
@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
       await db.insert(chat).values({
         id,
         workflowId,
-        userId: session.user.id,
+        userId: auth.userId!,
         subdomain,
         title,
         description: description || '',

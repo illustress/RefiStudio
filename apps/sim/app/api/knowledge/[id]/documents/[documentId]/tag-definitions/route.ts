@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto'
 import { and, eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import {
   getMaxSlotsForFieldType,
   getSlotsForFieldType,
@@ -140,13 +140,13 @@ export async function GET(
   try {
     logger.info(`[${requestId}] Getting tag definitions for document ${documentId}`)
 
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(req as any)
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     // Check if user has access to the knowledge base
-    const accessCheck = await checkKnowledgeBaseAccess(knowledgeBaseId, session.user.id)
+    const accessCheck = await checkKnowledgeBaseAccess(knowledgeBaseId, auth.userId!)
     if (!accessCheck.hasAccess) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
@@ -198,13 +198,13 @@ export async function POST(
   try {
     logger.info(`[${requestId}] Creating/updating tag definitions for document ${documentId}`)
 
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(req as any)
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     // Check if user has write access to the knowledge base
-    const accessCheck = await checkKnowledgeBaseWriteAccess(knowledgeBaseId, session.user.id)
+    const accessCheck = await checkKnowledgeBaseWriteAccess(knowledgeBaseId, auth.userId!)
     if (!accessCheck.hasAccess) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
@@ -454,13 +454,13 @@ export async function DELETE(
   const action = searchParams.get('action') // 'cleanup' or 'all'
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(req as any)
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     // Check if user has write access to the knowledge base
-    const accessCheck = await checkKnowledgeBaseWriteAccess(knowledgeBaseId, session.user.id)
+    const accessCheck = await checkKnowledgeBaseWriteAccess(knowledgeBaseId, auth.userId!)
     if (!accessCheck.hasAccess) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }

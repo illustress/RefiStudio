@@ -1,6 +1,8 @@
 import type { Socket } from 'socket.io'
 import { auth } from '@/lib/auth'
+import { jwtVerify } from 'jose'
 import { createLogger } from '@/lib/logs/console/logger'
+import { getInternalApiSecretKey } from '@/lib/security/internal-secret'
 
 const logger = createLogger('SocketAuth')
 
@@ -32,18 +34,34 @@ export async function authenticateSocket(socket: AuthenticatedSocket, next: any)
       return next(new Error('Authentication required'))
     }
 
-    // Validate one-time token with Better Auth
+    // Validate one-time token with Better Auth; fallback to internal JWT for SIWE
     try {
       logger.debug(`Attempting token validation for socket ${socket.id}`, {
         tokenLength: token?.length || 0,
         origin,
       })
 
-      const session = await auth.api.verifyOneTimeToken({
-        body: {
-          token,
-        },
-      })
+      let session: any = null
+      try {
+        session = await auth.api.verifyOneTimeToken({
+          body: {
+            token,
+          },
+        })
+      } catch {}
+      if (!session?.user?.id) {
+        // Try internal JWT fallback (issued by our API when Better Auth session is absent)
+        try {
+          const secret = getInternalApiSecretKey()
+          const { payload } = await jwtVerify(token, secret)
+          if (payload?.type === 'socket' && typeof payload?.userId === 'string') {
+            session = {
+              user: { id: payload.userId, email: undefined, name: undefined },
+              session: {},
+            }
+          }
+        } catch {}
+      }
 
       if (!session?.user?.id) {
         logger.warn(`Socket ${socket.id} rejected: Invalid token - no user found`)

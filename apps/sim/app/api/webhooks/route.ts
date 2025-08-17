@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { env } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
@@ -18,8 +18,8 @@ export async function GET(request: NextRequest) {
   const requestId = crypto.randomUUID().slice(0, 8)
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(request as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized webhooks access attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -33,7 +33,11 @@ export async function GET(request: NextRequest) {
       // Collaborative-aware path: allow collaborators with read access to view webhooks
       // Fetch workflow to verify access
       const wf = await db
-        .select({ id: workflow.id, userId: workflow.userId, workspaceId: workflow.workspaceId })
+        .select({
+          id: workflow.id,
+          userId: workflow.userId,
+          workspaceId: workflow.workspaceId,
+        })
         .from(workflow)
         .where(eq(workflow.id, workflowId))
         .limit(1)
@@ -44,10 +48,10 @@ export async function GET(request: NextRequest) {
       }
 
       const wfRecord = wf[0]
-      let canRead = wfRecord.userId === session.user.id
+      let canRead = wfRecord.userId === auth.userId
       if (!canRead && wfRecord.workspaceId) {
         const permission = await getUserEntityPermissions(
-          session.user.id,
+          auth.userId!,
           'workspace',
           wfRecord.workspaceId
         )
@@ -56,7 +60,7 @@ export async function GET(request: NextRequest) {
 
       if (!canRead) {
         logger.warn(
-          `[${requestId}] User ${session.user.id} denied permission to read webhooks for workflow ${workflowId}`
+          `[${requestId}] User ${auth.userId} denied permission to read webhooks for workflow ${workflowId}`
         )
         return NextResponse.json({ webhooks: [] }, { status: 200 })
       }
@@ -85,7 +89,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Default: list webhooks owned by the session user
-    logger.debug(`[${requestId}] Fetching user-owned webhooks for ${session.user.id}`)
+    logger.debug(`[${requestId}] Fetching user-owned webhooks for ${auth.userId}`)
     const webhooks = await db
       .select({
         webhook: webhook,
@@ -96,7 +100,7 @@ export async function GET(request: NextRequest) {
       })
       .from(webhook)
       .innerJoin(workflow, eq(webhook.workflowId, workflow.id))
-      .where(eq(workflow.userId, session.user.id))
+      .where(eq(workflow.userId, auth.userId!))
 
     logger.info(`[${requestId}] Retrieved ${webhooks.length} user-owned webhooks`)
     return NextResponse.json({ webhooks }, { status: 200 })
@@ -109,9 +113,10 @@ export async function GET(request: NextRequest) {
 // Create or Update a webhook
 export async function POST(request: NextRequest) {
   const requestId = crypto.randomUUID().slice(0, 8)
-  const userId = (await getSession())?.user?.id
+  const auth = await checkHybridAuth(request as any)
+  const userId = auth?.userId
 
-  if (!userId) {
+  if (!auth?.success || !userId) {
     logger.warn(`[${requestId}] Unauthorized webhook creation attempt`)
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

@@ -108,6 +108,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
   const [isConnecting, setIsConnecting] = useState(false)
   const [currentWorkflowId, setCurrentWorkflowId] = useState<string | null>(null)
   const [presenceUsers, setPresenceUsers] = useState<PresenceUser[]>([])
+  const [derivedUser, setDerivedUser] = useState<User | null>(null)
 
   // Get current workflow ID from URL params
   const params = useParams()
@@ -144,9 +145,33 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
     return token
   }
 
+  // Derive user identity when Better Auth session is absent (supports SIWE)
+  useEffect(() => {
+    if (user?.id || derivedUser?.id) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include' })
+        if (!res.ok) return
+        const data = (await res.json()) as {
+          userId: string | null
+          email: string | null
+        }
+        if (data.userId && !cancelled) {
+          setDerivedUser({ id: data.userId, email: data.email || undefined })
+        }
+      } catch {}
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id, derivedUser?.id])
+
+  const effectiveUserId = user?.id || derivedUser?.id
+
   // Initialize socket when user is available - only once per session
   useEffect(() => {
-    if (!user?.id) return
+    if (!effectiveUserId) return
 
     // Only initialize if we don't have a socket and aren't already connecting
     if (socket || isConnecting) {
@@ -154,7 +179,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
       return
     }
 
-    logger.info('Initializing socket connection for user:', user.id)
+    logger.info('Initializing socket connection for user:', effectiveUserId)
     setIsConnecting(true)
 
     const initializeSocket = async () => {
@@ -166,7 +191,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
 
         logger.info('Attempting to connect to Socket.IO server', {
           url: socketUrl,
-          userId: user?.id || 'no-user',
+          userId: effectiveUserId || 'no-user',
           hasToken: !!token,
           timestamp: new Date().toISOString(),
         })
@@ -324,7 +349,9 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
           logger.info(`Workflow ${data.workflowId} has been updated externally - requesting sync`)
           // Request fresh workflow state to sync with external changes
           if (data.workflowId === urlWorkflowId) {
-            socketInstance.emit('request-sync', { workflowId: data.workflowId })
+            socketInstance.emit('request-sync', {
+              workflowId: data.workflowId,
+            })
           }
         })
 
@@ -409,13 +436,18 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
 
         // Operation confirmation events
         socketInstance.on('operation-confirmed', (data) => {
-          logger.debug('Operation confirmed', { operationId: data.operationId })
+          logger.debug('Operation confirmed', {
+            operationId: data.operationId,
+          })
           eventHandlers.current.operationConfirmed?.(data)
         })
 
         // Operation failure events
         socketInstance.on('operation-failed', (data) => {
-          logger.warn('Operation failed', { operationId: data.operationId, error: data.error })
+          logger.warn('Operation failed', {
+            operationId: data.operationId,
+            error: data.error,
+          })
           eventHandlers.current.operationFailed?.(data)
         })
 
@@ -546,7 +578,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
       positionUpdateTimeouts.current.clear()
       pendingPositionUpdates.current.clear()
     }
-  }, [user?.id])
+  }, [effectiveUserId])
 
   // Handle workflow room switching when URL changes (for navigation between workflows)
   useEffect(() => {
@@ -586,7 +618,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
   // Join workflow room
   const joinWorkflow = useCallback(
     (workflowId: string) => {
-      if (!socket || !user?.id) {
+      if (!socket || !effectiveUserId) {
         logger.warn('Cannot join workflow: socket or user not available')
         return
       }
@@ -609,7 +641,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
       })
       setCurrentWorkflowId(workflowId)
     },
-    [socket, user, currentWorkflowId]
+    [socket, effectiveUserId, currentWorkflowId]
   )
 
   // Leave current workflow room

@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import { db } from '@/db'
@@ -11,8 +11,8 @@ const logger = createLogger('FoldersAPI')
 // GET - Fetch folders for a workspace
 export async function GET(request: NextRequest) {
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(request)
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
 
     // Check if user has workspace permissions
     const workspacePermission = await getUserEntityPermissions(
-      session.user.id,
+      auth.userId,
       'workspace',
       workspaceId
     )
@@ -52,8 +52,8 @@ export async function GET(request: NextRequest) {
 // POST - Create a new folder
 export async function POST(request: NextRequest) {
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(request)
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
 
     // Check if user has workspace permissions (at least 'write' access to create folders)
     const workspacePermission = await getUserEntityPermissions(
-      session.user.id,
+      auth.userId,
       'workspace',
       workspaceId
     )
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
         .values({
           id,
           name: name.trim(),
-          userId: session.user.id,
+          userId: auth.userId,
           workspaceId,
           parentId: parentId || null,
           color: color || '#6B7280',

@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { db } from '@/db'
 import { member, user, userStats } from '@/db/schema'
@@ -18,9 +18,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string; memberId: string }> }
 ) {
   try {
-    const session = await getSession()
+    const auth = await checkHybridAuth(request as any)
 
-    if (!session?.user?.id) {
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -32,7 +32,7 @@ export async function GET(
     const userMember = await db
       .select()
       .from(member)
-      .where(and(eq(member.organizationId, organizationId), eq(member.userId, session.user.id)))
+      .where(and(eq(member.organizationId, organizationId), eq(member.userId, auth.userId!)))
       .limit(1)
 
     if (userMember.length === 0) {
@@ -68,7 +68,7 @@ export async function GET(
     }
 
     // Check if user can view this member's details
-    const canViewDetails = hasAdminAccess || session.user.id === memberId
+    const canViewDetails = hasAdminAccess || auth.userId === memberId
 
     if (!canViewDetails) {
       return NextResponse.json({ error: 'Forbidden - Insufficient permissions' }, { status: 403 })
@@ -126,9 +126,9 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; memberId: string }> }
 ) {
   try {
-    const session = await getSession()
+    const auth = await checkHybridAuth(request as any)
 
-    if (!session?.user?.id) {
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -144,7 +144,7 @@ export async function PUT(
     const userMember = await db
       .select()
       .from(member)
-      .where(and(eq(member.organizationId, organizationId), eq(member.userId, session.user.id)))
+      .where(and(eq(member.organizationId, organizationId), eq(member.userId, auth.userId!)))
       .limit(1)
 
     if (userMember.length === 0) {
@@ -253,7 +253,7 @@ export async function DELETE(
     }
 
     const canRemoveMembers =
-      ['owner', 'admin'].includes(userMember[0].role) || session.user.id === memberId
+      ['owner', 'admin'].includes(userMember[0].role) || auth.userId === memberId
 
     if (!canRemoveMembers) {
       return NextResponse.json({ error: 'Forbidden - Insufficient permissions' }, { status: 403 })

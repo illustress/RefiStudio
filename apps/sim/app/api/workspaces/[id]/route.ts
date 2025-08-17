@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { workflow } from '@/db/schema'
 
@@ -12,16 +12,15 @@ import { knowledgeBase, permissions, workspace } from '@/db/schema'
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const session = await getSession()
-
-  if (!session?.user?.id) {
+  const auth = await checkHybridAuth(request)
+  if (!auth?.success || !auth.userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const workspaceId = id
 
   // Check if user has any access to this workspace
-  const userPermission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
+  const userPermission = await getUserEntityPermissions(auth.userId, 'workspace', workspaceId)
   if (!userPermission) {
     return NextResponse.json({ error: 'Workspace not found or access denied' }, { status: 404 })
   }
@@ -47,16 +46,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const session = await getSession()
-
-  if (!session?.user?.id) {
+  const auth = await checkHybridAuth(request)
+  if (!auth?.success || !auth.userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const workspaceId = id
 
   // Check if user has admin permissions to update workspace
-  const userPermission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
+  const userPermission = await getUserEntityPermissions(auth.userId, 'workspace', workspaceId)
   if (userPermission !== 'admin') {
     return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
   }
@@ -101,22 +99,21 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
-  const session = await getSession()
-
-  if (!session?.user?.id) {
+  const auth = await checkHybridAuth(request)
+  if (!auth?.success || !auth.userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const workspaceId = id
 
   // Check if user has admin permissions to delete workspace
-  const userPermission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
+  const userPermission = await getUserEntityPermissions(auth.userId, 'workspace', workspaceId)
   if (userPermission !== 'admin') {
     return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
   }
 
   try {
-    logger.info(`Deleting workspace ${workspaceId} for user ${session.user.id}`)
+    logger.info(`Deleting workspace ${workspaceId} for user ${auth.userId}`)
 
     // Delete workspace and all related data in a transaction
     await db.transaction(async (tx) => {

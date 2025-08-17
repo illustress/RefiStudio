@@ -5,6 +5,7 @@ import { verifyInternalToken } from '@/lib/auth/internal'
 import { createLogger } from '@/lib/logs/console/logger'
 import { db } from '@/db'
 import { apiKey as apiKeyTable, workflow } from '@/db/schema'
+import { decodeAndVerifySiweCookie } from '@/lib/auth/siwe-cookie'
 
 const logger = createLogger('HybridAuth')
 
@@ -92,7 +93,7 @@ export async function checkHybridAuth(
       }
     }
 
-    // 2. Try session auth (for web UI)
+    // 2. Try Better Auth session (for web UI)
     const session = await getSession()
     if (session?.user?.id) {
       return {
@@ -101,6 +102,15 @@ export async function checkHybridAuth(
         authType: 'session',
       }
     }
+
+    // 2b. Try SIWE session cookie (signed and time-limited) with legacy fallback
+    try {
+      const cookie = request.cookies.get('siwe_session')?.value
+      const payload = decodeAndVerifySiweCookie(cookie)
+      if (payload?.uid) {
+        return { success: true, userId: payload.uid, authType: 'session' }
+      }
+    } catch {}
 
     // 3. Try API key auth
     const apiKeyHeader = request.headers.get('x-api-key')

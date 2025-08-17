@@ -5,6 +5,12 @@ import { GithubIcon, GoogleIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { client } from '@/lib/auth-client'
+import Onboard from '@web3-onboard/core'
+import injectedModule from '@web3-onboard/injected-wallets'
+import walletConnectModule from '@web3-onboard/walletconnect'
+import { getEnv } from '@/lib/env'
+import { SiweMessage } from 'siwe'
+import { ethers } from 'ethers'
 
 interface SocialLoginButtonsProps {
   githubAvailable: boolean
@@ -166,6 +172,90 @@ export function SocialLoginButtons({
     <div className='grid gap-3'>
       {renderGithubButton()}
       {renderGoogleButton()}
+      <WalletLoginButton />
     </div>
+  )
+}
+
+function WalletLoginButton() {
+  const [loading, setLoading] = useState(false)
+
+  async function handleWalletLogin() {
+    setLoading(true)
+    try {
+      const injected = injectedModule()
+      const wcProjectId = getEnv('NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID')
+      const walletConnect = walletConnectModule({
+        projectId: wcProjectId || '00000000000000000000000000000000',
+      })
+      const onboard = Onboard({
+        wallets: [injected, walletConnect],
+        chains: [
+          {
+            id: '0x1',
+            token: 'ETH',
+            label: 'Ethereum',
+            rpcUrl: 'https://rpc.ankr.com/eth',
+          },
+        ],
+        appMetadata: {
+          name: 'Sim',
+          // minimal valid SVG string (required by Web3 Onboard)
+          icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" fill="#701ffc"/></svg>',
+          description: 'Sign in with your crypto wallet',
+          recommendedInjectedWallets: [{ name: 'MetaMask', url: 'https://metamask.io' }],
+        },
+      })
+
+      const connected = await onboard.connectWallet()
+      if (!connected.length) return
+
+      const { accounts, chains, provider } = connected[0]
+      const address = accounts[0].address
+      const checksumAddress = ethers.getAddress(address)
+      const chainId = Number.parseInt(chains[0].id, 16)
+
+      const nonce = await fetch('/api/auth/siwe/nonce', {
+        cache: 'no-store',
+      }).then((r) => r.text())
+
+      const message = new SiweMessage({
+        domain: window.location.host,
+        address: checksumAddress,
+        statement: 'Sign in to Sim',
+        uri: window.location.origin,
+        version: '1',
+        chainId,
+        nonce,
+      })
+
+      const browserProvider = new ethers.BrowserProvider(provider as any)
+      const signer = await browserProvider.getSigner()
+      const signature = await signer.signMessage(message.prepareMessage())
+
+      const verifyRes = await fetch('/api/auth/siwe/verify', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ message, signature }),
+      })
+      if (!verifyRes.ok) throw new Error('SIWE verification failed')
+
+      window.location.href = '/workspace'
+    } catch (e) {
+      console.error('Wallet login failed', e)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Button
+      variant='outline'
+      className='w-full border-neutral-700 bg-neutral-900 text-white hover:bg-neutral-800 hover:text-white'
+      disabled={loading}
+      onClick={handleWalletLogin}
+    >
+      {loading ? 'Connecting wallet…' : 'Continue with Wallet'}
+    </Button>
   )
 }

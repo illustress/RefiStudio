@@ -7,7 +7,7 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getStorageProvider, isUsingCloudStorage } from '@/lib/uploads'
 import { S3_KB_CONFIG } from '@/lib/uploads/setup'
@@ -37,8 +37,8 @@ interface CompleteMultipartRequest {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(request as any)
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -96,7 +96,9 @@ export async function POST(request: NextRequest) {
               UploadId: uploadId,
             })
 
-            const url = await getSignedUrl(s3Client, command, { expiresIn: 3600 })
+            const url = await getSignedUrl(s3Client, command, {
+              expiresIn: 3600,
+            })
             return { partNumber, url }
           })
         )
@@ -150,14 +152,18 @@ export async function POST(request: NextRequest) {
 
       default:
         return NextResponse.json(
-          { error: 'Invalid action. Use: initiate, get-part-urls, complete, or abort' },
+          {
+            error: 'Invalid action. Use: initiate, get-part-urls, complete, or abort',
+          },
           { status: 400 }
         )
     }
   } catch (error) {
     logger.error('Multipart upload error:', error)
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Multipart upload failed' },
+      {
+        error: error instanceof Error ? error.message : 'Multipart upload failed',
+      },
       { status: 500 }
     )
   }

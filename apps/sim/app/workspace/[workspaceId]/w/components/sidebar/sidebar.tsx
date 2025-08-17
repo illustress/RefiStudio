@@ -235,6 +235,15 @@ export function Sidebar() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [isLeaving, setIsLeaving] = useState(false)
 
+  // Auto-show workspace selector when appropriate
+  useEffect(() => {
+    if (!isSidebarCollapsed && !isWorkspacesLoading) {
+      if (workspaces.length > 1 || !activeWorkspace) {
+        setIsWorkspaceSelectorVisible(true)
+      }
+    }
+  }, [isSidebarCollapsed, isWorkspacesLoading, workspaces.length, activeWorkspace])
+
   // Auto-scroll state for drag operations
   const [isDragging, setIsDragging] = useState(false)
 
@@ -321,7 +330,9 @@ export function Sidebar() {
   const refreshWorkspaceList = useCallback(async () => {
     setIsWorkspacesLoading(true)
     try {
-      const response = await fetch('/api/workspaces')
+      const response = await fetch('/api/workspaces', {
+        credentials: 'include',
+      })
       const data = await response.json()
 
       if (data.workspaces && Array.isArray(data.workspaces)) {
@@ -360,7 +371,9 @@ export function Sidebar() {
   const fetchWorkspaces = useCallback(async () => {
     setIsWorkspacesLoading(true)
     try {
-      const response = await fetch('/api/workspaces')
+      const response = await fetch('/api/workspaces', {
+        credentials: 'include',
+      })
       const data = await response.json()
 
       if (data.workspaces && Array.isArray(data.workspaces)) {
@@ -640,7 +653,9 @@ export function Sidebar() {
     setIsTemplatesLoading(true)
     try {
       // Fetch templates from API, ordered by views (most popular first)
-      const response = await fetch('/api/templates?limit=8&offset=0')
+      const response = await fetch('/api/templates?limit=8&offset=0', {
+        credentials: 'include',
+      })
 
       if (!response.ok) {
         throw new Error(`Failed to fetch templates: ${response.status}`)
@@ -704,12 +719,12 @@ export function Sidebar() {
 
   // Initialize workspace data on mount (uses full validation with URL handling)
   useEffect(() => {
-    if (sessionData?.user?.id && !isInitializedRef.current) {
+    if (!isInitializedRef.current) {
       isInitializedRef.current = true
       fetchWorkspaces()
       fetchTemplates()
     }
-  }, [sessionData?.user?.id]) // Removed fetchWorkspaces dependency
+  }, [])
 
   // Scroll to active workflow when it changes
   useEffect(() => {
@@ -1103,7 +1118,9 @@ export function Sidebar() {
       {isBillingEnabled && (
         <div
           className='pointer-events-auto fixed left-4 z-50 w-56'
-          style={{ bottom: `${navigationBottom + SIDEBAR_HEIGHTS.NAVIGATION + SIDEBAR_GAP}px` }} // Navigation height + gap
+          style={{
+            bottom: `${navigationBottom + SIDEBAR_HEIGHTS.NAVIGATION + SIDEBAR_GAP}px`,
+          }} // Navigation height + gap
         >
           <UsageIndicator
             onClick={(badgeType) => {
@@ -1111,7 +1128,9 @@ export function Sidebar() {
                 // Open settings modal on subscription tab
                 if (typeof window !== 'undefined') {
                   window.dispatchEvent(
-                    new CustomEvent('open-settings', { detail: { tab: 'subscription' } })
+                    new CustomEvent('open-settings', {
+                      detail: { tab: 'subscription' },
+                    })
                   )
                 }
               } else {

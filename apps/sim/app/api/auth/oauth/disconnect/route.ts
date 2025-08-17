@@ -1,9 +1,10 @@
 import { and, eq, like, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { db } from '@/db'
 import { account } from '@/db/schema'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
+import { decodeAndVerifySiweCookie } from '@/lib/auth/siwe-cookie'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,14 +17,22 @@ export async function POST(request: NextRequest) {
   const requestId = crypto.randomUUID().slice(0, 8)
 
   try {
-    // Get the session
-    const session = await getSession()
-
-    // Check if the user is authenticated
-    if (!session?.user?.id) {
+    // Authenticate using hybrid auth (session, API key, SIWE)
+    const auth = await checkHybridAuth(request)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthenticated disconnect request rejected`)
       return NextResponse.json({ error: 'User not authenticated' }, { status: 401 })
     }
+    let userId = auth.userId
+
+    // Bridge: honor signed SIWE session user if different from Better Auth user
+    try {
+      const siweCookie = request.cookies.get('siwe_session')?.value
+      const parsed = decodeAndVerifySiweCookie(siweCookie)
+      if (parsed?.uid && parsed.uid !== userId) {
+        userId = parsed.uid
+      }
+    } catch {}
 
     // Get the provider and providerId from the request body
     const { provider, providerId } = await request.json()
@@ -42,7 +51,7 @@ export async function POST(request: NextRequest) {
     if (providerId) {
       await db
         .delete(account)
-        .where(and(eq(account.userId, session.user.id), eq(account.providerId, providerId)))
+        .where(and(eq(account.userId, userId), eq(account.providerId, providerId)))
     } else {
       // Otherwise, delete all accounts for this provider
       // Handle both exact matches (e.g., 'confluence') and prefixed matches (e.g., 'google-email')
@@ -50,7 +59,7 @@ export async function POST(request: NextRequest) {
         .delete(account)
         .where(
           and(
-            eq(account.userId, session.user.id),
+            eq(account.userId, userId),
             or(eq(account.providerId, provider), like(account.providerId, `${provider}-%`))
           )
         )

@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getEmailSubject, renderInvitationEmail } from '@/components/emails/render-email'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { validateSeatAvailability } from '@/lib/billing/validation/seat-management'
 import { sendEmail } from '@/lib/email/mailer'
 import { quickValidateEmail } from '@/lib/email/validation'
@@ -21,9 +21,9 @@ export const dynamic = 'force-dynamic'
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await getSession()
+    const auth = await checkHybridAuth(request as any)
 
-    if (!session?.user?.id) {
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const memberEntry = await db
       .select()
       .from(member)
-      .where(and(eq(member.organizationId, organizationId), eq(member.userId, session.user.id)))
+      .where(and(eq(member.organizationId, organizationId), eq(member.userId, auth.userId!)))
       .limit(1)
 
     if (memberEntry.length === 0) {
@@ -120,9 +120,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
  */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await getSession()
+    const auth = await checkHybridAuth(request as any)
 
-    if (!session?.user?.id) {
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -152,7 +152,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const memberEntry = await db
       .select()
       .from(member)
-      .where(and(eq(member.organizationId, organizationId), eq(member.userId, session.user.id)))
+      .where(and(eq(member.organizationId, organizationId), eq(member.userId, auth.userId!)))
       .limit(1)
 
     if (memberEntry.length === 0) {
@@ -230,7 +230,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     await db.insert(invitation).values({
       id: invitationId,
       email: normalizedEmail,
-      inviterId: session.user.id,
+      inviterId: auth.userId!,
       organizationId,
       role,
       status: 'pending',
@@ -247,7 +247,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const inviter = await db
       .select({ name: user.name })
       .from(user)
-      .where(eq(user.id, session.user.id))
+      .where(eq(user.id, auth.userId!))
       .limit(1)
 
     const emailHtml = await renderInvitationEmail(

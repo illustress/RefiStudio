@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 
 export const dynamic = 'force-dynamic'
@@ -30,8 +30,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const workflowId = (await params).id
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(req as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized workflow variables update attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -52,15 +52,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const workspaceId = workflowData.workspaceId
 
     // Check authorization - either the user owns the workflow or has workspace permissions
-    let isAuthorized = workflowData.userId === session.user.id
+    let isAuthorized = workflowData.userId === auth.userId
 
     // If not authorized by ownership and the workflow belongs to a workspace, check workspace permissions
     if (!isAuthorized && workspaceId) {
-      const userPermission = await getUserEntityPermissions(
-        session.user.id,
-        'workspace',
-        workspaceId
-      )
+      const userPermission = await getUserEntityPermissions(auth.userId!, 'workspace', workspaceId)
       isAuthorized = userPermission !== null
     }
 
@@ -119,9 +115,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const workflowId = (await params).id
 
   try {
-    // Get the session directly in the API route
-    const session = await getSession()
-    if (!session?.user?.id) {
+    // Hybrid auth (Better Auth session, SIWE, API key)
+    const auth = await checkHybridAuth(req as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized workflow variables access attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -142,21 +138,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const workspaceId = workflowData.workspaceId
 
     // Check authorization - either the user owns the workflow or has workspace permissions
-    let isAuthorized = workflowData.userId === session.user.id
+    let isAuthorized = workflowData.userId === auth.userId
 
     // If not authorized by ownership and the workflow belongs to a workspace, check workspace permissions
     if (!isAuthorized && workspaceId) {
-      const userPermission = await getUserEntityPermissions(
-        session.user.id,
-        'workspace',
-        workspaceId
-      )
+      const userPermission = await getUserEntityPermissions(auth.userId!, 'workspace', workspaceId)
       isAuthorized = userPermission !== null
     }
 
     if (!isAuthorized) {
       logger.warn(
-        `[${requestId}] User ${session.user.id} attempted to access variables for workflow ${workflowId} without permission`
+        `[${requestId}] User ${auth.userId} attempted to access variables for workflow ${workflowId} without permission`
       )
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

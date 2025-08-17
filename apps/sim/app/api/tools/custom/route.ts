@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserId } from '@/app/api/auth/oauth/utils'
 import { db } from '@/db'
@@ -52,13 +52,13 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
     } else {
-      // Otherwise use session-based auth (for client-side)
-      const session = await getSession()
-      if (!session?.user?.id) {
+      // Otherwise use hybrid auth (supports SIWE)
+      const auth = await checkHybridAuth(request)
+      if (!auth?.success || !auth.userId) {
         logger.warn(`[${requestId}] Unauthorized custom tools access attempt`)
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
-      userId = session.user.id
+      userId = auth.userId
     }
 
     const result = await db.select().from(customTools).where(eq(customTools.userId, userId))
@@ -75,8 +75,8 @@ export async function POST(req: NextRequest) {
   const requestId = crypto.randomUUID().slice(0, 8)
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(req)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized custom tools update attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -105,14 +105,14 @@ export async function POST(req: NextRequest) {
               // Tool doesn't exist, create it
               await tx.insert(customTools).values({
                 id: tool.id,
-                userId: session.user.id,
+                userId: auth.userId,
                 title: tool.title,
                 schema: tool.schema,
                 code: tool.code,
                 createdAt: nowTime,
                 updatedAt: nowTime,
               })
-            } else if (existingTool[0].userId === session.user.id) {
+            } else if (existingTool[0].userId === auth.userId) {
               // Tool exists and belongs to user, update it
               await tx
                 .update(customTools)
@@ -133,7 +133,7 @@ export async function POST(req: NextRequest) {
             // No ID provided, create a new tool
             await tx.insert(customTools).values({
               id: crypto.randomUUID(),
-              userId: session.user.id,
+              userId: auth.userId,
               title: tool.title,
               schema: tool.schema,
               code: tool.code,
@@ -175,8 +175,8 @@ export async function DELETE(request: NextRequest) {
   }
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(request)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized custom tool deletion attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -193,7 +193,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Tool not found' }, { status: 404 })
     }
 
-    if (existingTool[0].userId !== session.user.id) {
+    if (existingTool[0].userId !== auth.userId) {
       logger.warn(`[${requestId}] User attempted to delete a tool they don't own: ${toolId}`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }

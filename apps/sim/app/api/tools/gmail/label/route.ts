@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
 import { db } from '@/db'
@@ -15,10 +15,10 @@ export async function GET(request: NextRequest) {
 
   try {
     // Get the session
-    const session = await getSession()
+    const auth = await checkHybridAuth(request as any)
 
     // Check if the user is authenticated
-    if (!session?.user?.id) {
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthenticated label request rejected`)
       return NextResponse.json({ error: 'User not authenticated' }, { status: 401 })
     }
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     const credentials = await db
       .select()
       .from(account)
-      .where(and(eq(account.id, credentialId), eq(account.userId, session.user.id)))
+      .where(and(eq(account.id, credentialId), eq(account.userId, auth.userId!)))
       .limit(1)
 
     if (!credentials.length) {
@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
     )
 
     // Refresh access token if needed using the utility function
-    const accessToken = await refreshAccessTokenIfNeeded(credentialId, session.user.id, requestId)
+    const accessToken = await refreshAccessTokenIfNeeded(credentialId, auth.userId!, requestId)
 
     if (!accessToken) {
       return NextResponse.json({ error: 'Failed to obtain valid access token' }, { status: 401 })

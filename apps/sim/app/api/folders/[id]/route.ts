@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import { db } from '@/db'
@@ -11,8 +11,8 @@ const logger = createLogger('FoldersIDAPI')
 // PUT - Update a folder
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(request)
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -33,7 +33,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     // Check if user has write permissions for the workspace
     const workspacePermission = await getUserEntityPermissions(
-      session.user.id,
+      auth.userId,
       'workspace',
       existingFolder.workspaceId
     )
@@ -89,8 +89,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(request as any)
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -109,7 +109,7 @@ export async function DELETE(
 
     // Check if user has admin permissions for the workspace (admin-only for deletions)
     const workspacePermission = await getUserEntityPermissions(
-      session.user.id,
+      auth.userId!,
       'workspace',
       existingFolder.workspaceId
     )

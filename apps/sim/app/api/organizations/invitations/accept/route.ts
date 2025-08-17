@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { env } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
 import { db } from '@/db'
@@ -24,9 +24,9 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  const session = await getSession()
+  const auth = await checkHybridAuth(req as any)
 
-  if (!session?.user?.id) {
+  if (!auth?.success || !auth.userId) {
     // Redirect to login, user will be redirected back after login
     return NextResponse.redirect(
       new URL(
@@ -73,7 +73,10 @@ export async function GET(req: NextRequest) {
     }
 
     // Verify the email matches the current user
-    if (orgInvitation.email !== session.user.email) {
+    // If email is available in auth context, ensure it matches the invitation
+    // Otherwise skip strict email check (wallet users may not have email)
+    const authEmail = (auth as any).email as string | undefined
+    if (authEmail && orgInvitation.email !== authEmail) {
       return NextResponse.redirect(
         new URL(
           '/invite/invite-error?reason=email-mismatch',
@@ -89,7 +92,7 @@ export async function GET(req: NextRequest) {
       .where(
         and(
           eq(member.organizationId, orgInvitation.organizationId),
-          eq(member.userId, session.user.id)
+          eq(member.userId, auth.userId!)
         )
       )
       .limit(1)
@@ -108,7 +111,7 @@ export async function GET(req: NextRequest) {
       // Accept organization invitation - add user as member
       await tx.insert(member).values({
         id: randomUUID(),
-        userId: session.user.id,
+        userId: auth.userId!,
         organizationId: orgInvitation.organizationId,
         role: orgInvitation.role,
         createdAt: new Date(),
@@ -140,7 +143,7 @@ export async function GET(req: NextRequest) {
             .from(permissions)
             .where(
               and(
-                eq(permissions.userId, session.user.id),
+                eq(permissions.userId, auth.userId!),
                 eq(permissions.entityType, 'workspace'),
                 eq(permissions.entityId, wsInvitation.workspaceId)
               )
@@ -151,7 +154,7 @@ export async function GET(req: NextRequest) {
             // Add workspace permissions
             await tx.insert(permissions).values({
               id: randomUUID(),
-              userId: session.user.id,
+              userId: auth.userId!,
               entityType: 'workspace',
               entityId: wsInvitation.workspaceId,
               permissionType: wsInvitation.permissions,
@@ -167,7 +170,7 @@ export async function GET(req: NextRequest) {
 
             logger.info('Accepted workspace invitation', {
               workspaceId: wsInvitation.workspaceId,
-              userId: session.user.id,
+              userId: auth.userId!,
               permission: wsInvitation.permissions,
             })
           }
@@ -177,7 +180,7 @@ export async function GET(req: NextRequest) {
 
     logger.info('Successfully accepted batch invitation', {
       organizationId: orgInvitation.organizationId,
-      userId: session.user.id,
+      userId: auth.userId!,
       role: orgInvitation.role,
     })
 
@@ -188,7 +191,7 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     logger.error('Failed to accept organization invitation', {
       invitationId,
-      userId: session.user.id,
+      userId: auth.userId!,
       error,
     })
 
@@ -203,9 +206,9 @@ export async function GET(req: NextRequest) {
 
 // POST endpoint for programmatic acceptance (for API use)
 export async function POST(req: NextRequest) {
-  const session = await getSession()
+  const auth = await checkHybridAuth(req as any)
 
-  if (!session?.user?.id) {
+  if (!auth?.success || !auth.userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -237,7 +240,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invitation already processed' }, { status: 400 })
     }
 
-    if (orgInvitation.email !== session.user.email) {
+    const authEmail = (auth as any).email as string | undefined
+    if (authEmail && orgInvitation.email !== authEmail) {
       return NextResponse.json({ error: 'Email mismatch' }, { status: 403 })
     }
 
@@ -248,7 +252,7 @@ export async function POST(req: NextRequest) {
       .where(
         and(
           eq(member.organizationId, orgInvitation.organizationId),
-          eq(member.userId, session.user.id)
+          eq(member.userId, auth.userId!)
         )
       )
       .limit(1)
@@ -264,7 +268,7 @@ export async function POST(req: NextRequest) {
       // Accept organization invitation
       await tx.insert(member).values({
         id: randomUUID(),
-        userId: session.user.id,
+        userId: auth.userId!,
         organizationId: orgInvitation.organizationId,
         role: orgInvitation.role,
         createdAt: new Date(),
@@ -293,7 +297,7 @@ export async function POST(req: NextRequest) {
             .from(permissions)
             .where(
               and(
-                eq(permissions.userId, session.user.id),
+                eq(permissions.userId, auth.userId!),
                 eq(permissions.entityType, 'workspace'),
                 eq(permissions.entityId, wsInvitation.workspaceId)
               )
@@ -303,7 +307,7 @@ export async function POST(req: NextRequest) {
           if (existingPermission.length === 0) {
             await tx.insert(permissions).values({
               id: randomUUID(),
-              userId: session.user.id,
+              userId: auth.userId!,
               entityType: 'workspace',
               entityId: wsInvitation.workspaceId,
               permissionType: wsInvitation.permissions,

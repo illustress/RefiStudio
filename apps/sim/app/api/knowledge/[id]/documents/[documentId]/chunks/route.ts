@@ -2,7 +2,7 @@ import crypto from 'crypto'
 import { and, asc, eq, ilike, inArray, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 
 export const dynamic = 'force-dynamic'
@@ -48,13 +48,13 @@ export async function GET(
   const { id: knowledgeBaseId, documentId } = await params
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(req as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized chunks access attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const accessCheck = await checkDocumentAccess(knowledgeBaseId, documentId, session.user.id)
+    const accessCheck = await checkDocumentAccess(knowledgeBaseId, documentId, auth.userId!)
 
     if (!accessCheck.hasAccess) {
       if (accessCheck.notFound) {
@@ -64,7 +64,7 @@ export async function GET(
         return NextResponse.json({ error: accessCheck.reason }, { status: 404 })
       }
       logger.warn(
-        `[${requestId}] User ${session.user.id} attempted unauthorized chunks access: ${accessCheck.reason}`
+        `[${requestId}] User ${auth.userId} attempted unauthorized chunks access: ${accessCheck.reason}`
       )
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -347,13 +347,13 @@ export async function PATCH(
   const { id: knowledgeBaseId, documentId } = await params
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(req as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized batch chunk operation attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const accessCheck = await checkDocumentAccess(knowledgeBaseId, documentId, session.user.id)
+    const accessCheck = await checkDocumentAccess(knowledgeBaseId, documentId, auth.userId!)
 
     if (!accessCheck.hasAccess) {
       if (accessCheck.notFound) {
@@ -363,7 +363,7 @@ export async function PATCH(
         return NextResponse.json({ error: accessCheck.reason }, { status: 404 })
       }
       logger.warn(
-        `[${requestId}] User ${session.user.id} attempted unauthorized batch chunk operation: ${accessCheck.reason}`
+        `[${requestId}] User ${auth.userId} attempted unauthorized batch chunk operation: ${accessCheck.reason}`
       )
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

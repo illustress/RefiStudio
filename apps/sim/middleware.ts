@@ -1,5 +1,6 @@
 import { getSessionCookie } from 'better-auth/cookies'
 import { type NextRequest, NextResponse } from 'next/server'
+import { decodeAndVerifySiweCookieEdge } from '@/lib/auth/siwe-cookie-edge'
 import { isDev } from './lib/environment'
 import { createLogger } from './lib/logs/console/logger'
 import { generateRuntimeCSP } from './lib/security/csp'
@@ -18,9 +19,11 @@ const SUSPICIOUS_UA_PATTERNS = [
 const BASE_DOMAIN = getBaseDomain()
 
 export async function middleware(request: NextRequest) {
-  // Check for active session
+  // Check for active session (Better Auth or signed SIWE)
   const sessionCookie = getSessionCookie(request)
-  const hasActiveSession = !!sessionCookie
+  const siweRaw = request.cookies.get('siwe_session')?.value
+  const siwe = await decodeAndVerifySiweCookieEdge(siweRaw)
+  const hasActiveSession = !!sessionCookie || !!siwe
 
   const url = request.nextUrl
   const hostname = request.headers.get('host') || ''

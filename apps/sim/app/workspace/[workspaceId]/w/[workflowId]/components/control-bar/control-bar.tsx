@@ -398,7 +398,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
    * Render delete workflow button with confirmation dialog
    */
   const renderDeleteButton = () => {
-    const canEdit = userPermissions.canEdit
+    const canEdit = userPermissions.canAdmin || userPermissions.canEdit
     const hasMultipleWorkflows = Object.keys(workflows).length > 1
     const isDisabled = !canEdit || !hasMultipleWorkflows
 

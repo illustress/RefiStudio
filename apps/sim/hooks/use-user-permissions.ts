@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useSession } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
 import type { PermissionType, WorkspacePermissions } from '@/hooks/use-workspace-permissions'
@@ -32,10 +32,60 @@ export function useUserPermissions(
   permissionsError: string | null = null
 ): WorkspaceUserPermissions {
   const { data: session } = useSession()
+  const [meEmail, setMeEmail] = useState<string | null>(null)
+
+  function getSiweEmailFromCookie(): string | null {
+    if (typeof document === 'undefined') return null
+    try {
+      const cookie = document.cookie
+        .split('; ')
+        .find((row) => row.startsWith('siwe_session='))
+        ?.split('=')[1]
+      if (!cookie) return null
+      // base64url decode
+      const base64 = cookie.replace(/-/g, '+').replace(/_/g, '/')
+      const padded = base64 + '==='.slice((base64.length + 3) % 4)
+      const json = atob(padded)
+      const parsed = JSON.parse(json) as { addr?: string; uid?: string }
+      if (parsed?.addr) {
+        return `${parsed.addr.toLowerCase()}@wallet.user`
+      }
+      return null
+    } catch {
+      return null
+    }
+  }
+
+  // Load identity from server (supports SIWE) when session email is absent
+  useEffect(() => {
+    let cancelled = false
+    async function loadMe() {
+      if (session?.user?.email) {
+        setMeEmail(session.user.email)
+        return
+      }
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include' })
+        if (!res.ok) return
+        const data = (await res.json()) as {
+          userId: string | null
+          email: string | null
+        }
+        if (!cancelled) setMeEmail(data.email)
+      } catch {
+        // ignore
+      }
+    }
+    loadMe()
+    return () => {
+      cancelled = true
+    }
+  }, [session?.user?.email])
 
   const userPermissions = useMemo((): WorkspaceUserPermissions => {
-    // If still loading or no session, return safe defaults
-    if (permissionsLoading || !session?.user?.email) {
+    const effectiveEmail = session?.user?.email || meEmail || getSiweEmailFromCookie()
+    // If still loading or no identity, return safe defaults
+    if (permissionsLoading || !effectiveEmail) {
       return {
         canRead: false,
         canEdit: false,
@@ -48,13 +98,13 @@ export function useUserPermissions(
 
     // Find current user in workspace permissions (case-insensitive)
     const currentUser = workspacePermissions?.users?.find(
-      (user) => user.email.toLowerCase() === session.user.email.toLowerCase()
+      (user) => user.email.toLowerCase() === effectiveEmail.toLowerCase()
     )
 
     // If user not found in workspace, they have no permissions
     if (!currentUser) {
       logger.warn('User not found in workspace permissions', {
-        userEmail: session.user.email,
+        userEmail: effectiveEmail,
         hasPermissions: !!workspacePermissions,
         userCount: workspacePermissions?.users?.length || 0,
       })
@@ -84,7 +134,7 @@ export function useUserPermissions(
       isLoading: false,
       error: permissionsError,
     }
-  }, [session, workspacePermissions, permissionsLoading, permissionsError])
+  }, [session, meEmail, workspacePermissions, permissionsLoading, permissionsError])
 
   return userPermissions
 }

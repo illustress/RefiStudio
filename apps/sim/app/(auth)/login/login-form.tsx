@@ -365,6 +365,9 @@ export default function LoginPage({
             isProduction={isProduction}
             callbackURL={callbackUrl}
           />
+          <div className='mt-3'>
+            <p className='text-center text-neutral-400 text-xs'>or</p>
+          </div>
 
           <div className='relative mt-2 py-4'>
             <div className='absolute inset-0 flex items-center'>

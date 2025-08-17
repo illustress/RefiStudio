@@ -1,7 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { checkKnowledgeBaseAccess, checkKnowledgeBaseWriteAccess } from '@/app/api/knowledge/utils'
 import { db } from '@/db'
@@ -29,13 +29,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(_req as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized knowledge base access attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const accessCheck = await checkKnowledgeBaseAccess(id, session.user.id)
+    const accessCheck = await checkKnowledgeBaseAccess(id, auth.userId!)
 
     if (!accessCheck.hasAccess) {
       if ('notFound' in accessCheck && accessCheck.notFound) {
@@ -43,7 +43,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         return NextResponse.json({ error: 'Knowledge base not found' }, { status: 404 })
       }
       logger.warn(
-        `[${requestId}] User ${session.user.id} attempted to access unauthorized knowledge base ${id}`
+        `[${requestId}] User ${auth.userId} attempted to access unauthorized knowledge base ${id}`
       )
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -58,7 +58,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: 'Knowledge base not found' }, { status: 404 })
     }
 
-    logger.info(`[${requestId}] Retrieved knowledge base: ${id} for user ${session.user.id}`)
+    logger.info(`[${requestId}] Retrieved knowledge base: ${id} for user ${auth.userId}`)
 
     return NextResponse.json({
       success: true,
@@ -75,13 +75,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(req as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized knowledge base update attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const accessCheck = await checkKnowledgeBaseWriteAccess(id, session.user.id)
+    const accessCheck = await checkKnowledgeBaseWriteAccess(id, auth.userId!)
 
     if (!accessCheck.hasAccess) {
       if ('notFound' in accessCheck && accessCheck.notFound) {
@@ -89,7 +89,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         return NextResponse.json({ error: 'Knowledge base not found' }, { status: 404 })
       }
       logger.warn(
-        `[${requestId}] User ${session.user.id} attempted to update unauthorized knowledge base ${id}`
+        `[${requestId}] User ${auth.userId} attempted to update unauthorized knowledge base ${id}`
       )
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -130,7 +130,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         .where(eq(knowledgeBase.id, id))
         .limit(1)
 
-      logger.info(`[${requestId}] Knowledge base updated: ${id} for user ${session.user.id}`)
+      logger.info(`[${requestId}] Knowledge base updated: ${id} for user ${auth.userId}`)
 
       return NextResponse.json({
         success: true,
@@ -159,13 +159,13 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(_req as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized knowledge base delete attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const accessCheck = await checkKnowledgeBaseWriteAccess(id, session.user.id)
+    const accessCheck = await checkKnowledgeBaseWriteAccess(id, auth.userId!)
 
     if (!accessCheck.hasAccess) {
       if ('notFound' in accessCheck && accessCheck.notFound) {
@@ -173,7 +173,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
         return NextResponse.json({ error: 'Knowledge base not found' }, { status: 404 })
       }
       logger.warn(
-        `[${requestId}] User ${session.user.id} attempted to delete unauthorized knowledge base ${id}`
+        `[${requestId}] User ${auth.userId} attempted to delete unauthorized knowledge base ${id}`
       )
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -187,7 +187,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       })
       .where(eq(knowledgeBase.id, id))
 
-    logger.info(`[${requestId}] Knowledge base deleted: ${id} for user ${session.user.id}`)
+    logger.info(`[${requestId}] Knowledge base deleted: ${id} for user ${auth.userId}`)
 
     return NextResponse.json({
       success: true,

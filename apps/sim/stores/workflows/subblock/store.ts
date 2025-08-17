@@ -1,4 +1,4 @@
-import { create } from 'zustand'
+import { createWithEqualityFn } from 'zustand/traditional'
 import { devtools } from 'zustand/middleware'
 import type { SubBlockConfig } from '@/blocks/types'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
@@ -16,7 +16,7 @@ import type { SubBlockStore } from '@/stores/workflows/subblock/types'
  *    in the synchronized state to ensure persistence
  */
 
-export const useSubBlockStore = create<SubBlockStore>()(
+export const useSubBlockStore = createWithEqualityFn<SubBlockStore>()(
   devtools((set, get) => ({
     workflowValues: {},
 
@@ -33,7 +33,10 @@ export const useSubBlockStore = create<SubBlockStore>()(
           value.some((item) => item && typeof item === 'object' && 'cells' in item)
 
         if (isTableData) {
-          console.log('Validating table data for subblock:', { blockId, subBlockId })
+          console.log('Validating table data for subblock:', {
+            blockId,
+            subBlockId,
+          })
           validatedValue = value.map((row: any) => {
             // Ensure each row has proper structure
             if (!row || typeof row !== 'object') {

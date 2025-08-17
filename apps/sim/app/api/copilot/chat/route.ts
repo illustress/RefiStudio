@@ -1,7 +1,7 @@
 import { and, desc, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getSession } from '@/lib/auth'
+// import { getSession } from '@/lib/auth'
 import {
   authenticateCopilotRequestSessionOnly,
   createBadRequestResponse,
@@ -140,14 +140,12 @@ export async function POST(req: NextRequest) {
   const tracker = createRequestTracker()
 
   try {
-    // Get session to access user information including name
-    const session = await getSession()
-
-    if (!session?.user?.id) {
+    // Hybrid session acceptance (supports SIWE)
+    const { userId: authenticatedUserId, isAuthenticated } =
+      await authenticateCopilotRequestSessionOnly(req)
+    if (!isAuthenticated || !authenticatedUserId) {
       return createUnauthorizedResponse()
     }
-
-    const authenticatedUserId = session.user.id
 
     const body = await req.json()
     const {
@@ -351,7 +349,7 @@ export async function POST(req: NextRequest) {
         stream: stream,
         streamToolCalls: true,
         mode: mode,
-        ...(session?.user?.name && { userName: session.user.name }),
+        // userName optional; only available for Better Auth session
       }),
     })
 
@@ -765,7 +763,9 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Internal server error' },
+      {
+        error: error instanceof Error ? error.message : 'Internal server error',
+      },
       { status: 500 }
     )
   }
@@ -782,7 +782,7 @@ export async function GET(req: NextRequest) {
 
     // Get authenticated user using consolidated helper
     const { userId: authenticatedUserId, isAuthenticated } =
-      await authenticateCopilotRequestSessionOnly()
+      await authenticateCopilotRequestSessionOnly(req)
     if (!isAuthenticated || !authenticatedUserId) {
       return createUnauthorizedResponse()
     }

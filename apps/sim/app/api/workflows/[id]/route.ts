@@ -1,14 +1,13 @@
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getSession } from '@/lib/auth'
-import { verifyInternalToken } from '@/lib/auth/internal'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { env } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions, hasAdminPermission } from '@/lib/permissions/utils'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/db-helpers'
 import { db } from '@/db'
-import { apiKey as apiKeyTable, workflow } from '@/db/schema'
+import { workflow } from '@/db/schema'
 
 const logger = createLogger('WorkflowByIdAPI')
 
@@ -32,48 +31,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const { id: workflowId } = await params
 
   try {
-    // Check for internal JWT token for server-side calls
-    const authHeader = request.headers.get('authorization')
-    let isInternalCall = false
-
-    if (authHeader?.startsWith('Bearer ')) {
-      const token = authHeader.split(' ')[1]
-      isInternalCall = await verifyInternalToken(token)
-    }
-
-    let userId: string | null = null
-
-    if (isInternalCall) {
-      // For internal calls, we'll skip user-specific access checks
-      logger.info(`[${requestId}] Internal API call for workflow ${workflowId}`)
-    } else {
-      // Try session auth first (for web UI)
-      const session = await getSession()
-      let authenticatedUserId: string | null = session?.user?.id || null
-
-      // If no session, check for API key auth
-      if (!authenticatedUserId) {
-        const apiKeyHeader = request.headers.get('x-api-key')
-        if (apiKeyHeader) {
-          // Verify API key
-          const [apiKeyRecord] = await db
-            .select({ userId: apiKeyTable.userId })
-            .from(apiKeyTable)
-            .where(eq(apiKeyTable.key, apiKeyHeader))
-            .limit(1)
-
-          if (apiKeyRecord) {
-            authenticatedUserId = apiKeyRecord.userId
-          }
-        }
-      }
-
-      if (!authenticatedUserId) {
-        logger.warn(`[${requestId}] Unauthorized access attempt for workflow ${workflowId}`)
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      userId = authenticatedUserId
+    // Hybrid auth: supports Better Auth session, SIWE cookie, API key, internal JWT
+    const auth = await checkHybridAuth(request)
+    const isInternalCall = auth.success && auth.authType === 'internal_jwt'
+    const userId: string | null = auth.userId ?? null
+    if (!auth.success && !isInternalCall) {
+      logger.warn(`[${requestId}] Unauthorized access attempt for workflow ${workflowId}`)
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     // Fetch the workflow
@@ -185,14 +149,13 @@ export async function DELETE(
   const { id: workflowId } = await params
 
   try {
-    // Get the session
-    const session = await getSession()
-    if (!session?.user?.id) {
+    // Hybrid auth
+    const auth = await checkHybridAuth(request)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized deletion attempt for workflow ${workflowId}`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-
-    const userId = session.user.id
+    const userId = auth.userId
 
     // Fetch the workflow to check ownership/access
     const workflowData = await db
@@ -280,14 +243,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const { id: workflowId } = await params
 
   try {
-    // Get the session
-    const session = await getSession()
-    if (!session?.user?.id) {
+    // Hybrid auth
+    const auth = await checkHybridAuth(request)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized update attempt for workflow ${workflowId}`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-
-    const userId = session.user.id
+    const userId = auth.userId
 
     // Parse and validate request body
     const body = await request.json()

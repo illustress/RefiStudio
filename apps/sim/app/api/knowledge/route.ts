@@ -1,7 +1,7 @@
 import { and, count, eq, isNotNull, isNull, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import { db } from '@/db'
@@ -35,8 +35,8 @@ export async function GET(req: NextRequest) {
   const requestId = crypto.randomUUID().slice(0, 8)
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(req as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized knowledge base access attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
         and(
           eq(permissions.entityType, 'workspace'),
           eq(permissions.entityId, knowledgeBase.workspaceId),
-          eq(permissions.userId, session.user.id)
+          eq(permissions.userId, auth.userId!)
         )
       )
       .where(
@@ -82,12 +82,12 @@ export async function GET(req: NextRequest) {
                 // Knowledge bases belonging to the specified workspace (user must have workspace permissions)
                 and(eq(knowledgeBase.workspaceId, workspaceId), isNotNull(permissions.userId)),
                 // Fallback: User-owned knowledge bases without workspace (legacy)
-                and(eq(knowledgeBase.userId, session.user.id), isNull(knowledgeBase.workspaceId))
+                and(eq(knowledgeBase.userId, auth.userId!), isNull(knowledgeBase.workspaceId))
               )
             : // When not filtering by workspace, use original logic
               or(
                 // User owns the knowledge base directly
-                eq(knowledgeBase.userId, session.user.id),
+                eq(knowledgeBase.userId, auth.userId!),
                 // User has permissions on the knowledge base's workspace
                 isNotNull(permissions.userId)
               )
@@ -110,8 +110,8 @@ export async function POST(req: NextRequest) {
   const requestId = crypto.randomUUID().slice(0, 8)
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(req as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized knowledge base creation attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -124,16 +124,18 @@ export async function POST(req: NextRequest) {
       // If creating in a workspace, check if user has write/admin permissions
       if (validatedData.workspaceId) {
         const userPermission = await getUserEntityPermissions(
-          session.user.id,
+          auth.userId!,
           'workspace',
           validatedData.workspaceId
         )
         if (userPermission !== 'write' && userPermission !== 'admin') {
           logger.warn(
-            `[${requestId}] User ${session.user.id} denied permission to create knowledge base in workspace ${validatedData.workspaceId}`
+            `[${requestId}] User ${auth.userId} denied permission to create knowledge base in workspace ${validatedData.workspaceId}`
           )
           return NextResponse.json(
-            { error: 'Insufficient permissions to create knowledge base in this workspace' },
+            {
+              error: 'Insufficient permissions to create knowledge base in this workspace',
+            },
             { status: 403 }
           )
         }
@@ -144,7 +146,7 @@ export async function POST(req: NextRequest) {
 
       const newKnowledgeBase = {
         id,
-        userId: session.user.id,
+        userId: auth.userId!,
         workspaceId: validatedData.workspaceId || null,
         name: validatedData.name,
         description: validatedData.description || null,
@@ -163,7 +165,7 @@ export async function POST(req: NextRequest) {
 
       await db.insert(knowledgeBase).values(newKnowledgeBase)
 
-      logger.info(`[${requestId}] Knowledge base created: ${id} for user ${session.user.id}`)
+      logger.info(`[${requestId}] Knowledge base created: ${id} for user ${auth.userId}`)
 
       return NextResponse.json({
         success: true,

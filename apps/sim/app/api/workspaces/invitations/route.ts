@@ -4,7 +4,7 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { WorkspaceInvitationEmail } from '@/components/emails/workspace-invitation'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { env } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getEmailDomain } from '@/lib/urls/utils'
@@ -26,9 +26,9 @@ type PermissionType = (typeof permissionTypeEnum.enumValues)[number]
 
 // Get all invitations for the user's workspaces
 export async function GET(req: NextRequest) {
-  const session = await getSession()
+  const auth = await checkHybridAuth(req as any)
 
-  if (!session?.user?.id) {
+  if (!auth?.success || !auth.userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
         and(
           eq(permissions.entityId, workspace.id),
           eq(permissions.entityType, 'workspace'),
-          eq(permissions.userId, session.user.id)
+          eq(permissions.userId, auth.userId)
         )
       )
 
@@ -68,9 +68,9 @@ export async function GET(req: NextRequest) {
 
 // Create a new invitation
 export async function POST(req: NextRequest) {
-  const session = await getSession()
+  const auth = await checkHybridAuth(req as any)
 
-  if (!session?.user?.id) {
+  if (!auth?.success || !auth.userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -85,7 +85,9 @@ export async function POST(req: NextRequest) {
     const validPermissions: PermissionType[] = ['admin', 'write', 'read']
     if (!validPermissions.includes(permission)) {
       return NextResponse.json(
-        { error: `Invalid permission: must be one of ${validPermissions.join(', ')}` },
+        {
+          error: `Invalid permission: must be one of ${validPermissions.join(', ')}`,
+        },
         { status: 400 }
       )
     }
@@ -98,7 +100,7 @@ export async function POST(req: NextRequest) {
         and(
           eq(permissions.entityId, workspaceId),
           eq(permissions.entityType, 'workspace'),
-          eq(permissions.userId, session.user.id),
+          eq(permissions.userId, auth.userId),
           eq(permissions.permissionType, 'admin')
         )
       )
@@ -188,7 +190,7 @@ export async function POST(req: NextRequest) {
       id: randomUUID(),
       workspaceId,
       email,
-      inviterId: session.user.id,
+      inviterId: auth.userId,
       role,
       status: 'pending',
       token,
@@ -204,7 +206,7 @@ export async function POST(req: NextRequest) {
     // Send the invitation email
     await sendInvitationEmail({
       to: email,
-      inviterName: session.user.name || session.user.email || 'A user',
+      inviterName: 'A user',
       workspaceName: workspaceDetails.name,
       token: token,
     })

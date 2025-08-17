@@ -2,12 +2,13 @@ import { jwtVerify, SignJWT } from 'jose'
 import { type NextRequest, NextResponse } from 'next/server'
 import { env } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
+import { getInternalApiSecretKey } from '@/lib/security/internal-secret'
 
 const logger = createLogger('CronAuth')
 
 // Create a secret key for JWT signing
 const getJwtSecret = () => {
-  const secret = new TextEncoder().encode(env.INTERNAL_API_SECRET)
+  const secret = getInternalApiSecretKey()
   return secret
 }
 
@@ -43,7 +44,7 @@ export async function verifyInternalToken(token: string): Promise<boolean> {
     })
 
     // Check that it's an internal token
-    return payload.type === 'internal'
+    return (payload as any).type === 'internal'
   } catch (error) {
     // Token verification failed
     return false

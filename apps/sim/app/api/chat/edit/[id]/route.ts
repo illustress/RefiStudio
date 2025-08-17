@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { isDev } from '@/lib/environment'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getEmailDomain } from '@/lib/urls/utils'
@@ -53,14 +53,14 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const chatId = id
 
   try {
-    const session = await getSession()
+    const auth = await checkHybridAuth(_request as any)
 
-    if (!session) {
+    if (!auth?.success || !auth.userId) {
       return createErrorResponse('Unauthorized', 401)
     }
 
     // Check if user has access to view this chat
-    const { hasAccess, chat: chatRecord } = await checkChatAccess(chatId, session.user.id)
+    const { hasAccess, chat: chatRecord } = await checkChatAccess(chatId, auth.userId!)
 
     if (!hasAccess || !chatRecord) {
       return createErrorResponse('Chat not found or access denied', 404)
@@ -94,9 +94,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const chatId = id
 
   try {
-    const session = await getSession()
+    const auth = await checkHybridAuth(request as any)
 
-    if (!session) {
+    if (!auth?.success || !auth.userId) {
       return createErrorResponse('Unauthorized', 401)
     }
 
@@ -106,7 +106,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       const validatedData = chatUpdateSchema.parse(body)
 
       // Check if user has access to edit this chat
-      const { hasAccess, chat: existingChatRecord } = await checkChatAccess(chatId, session.user.id)
+      const { hasAccess, chat: existingChatRecord } = await checkChatAccess(chatId, auth.userId!)
 
       if (!hasAccess || !existingChatRecord) {
         return createErrorResponse('Chat not found or access denied', 404)
@@ -250,14 +250,14 @@ export async function DELETE(
   const chatId = id
 
   try {
-    const session = await getSession()
+    const auth = await checkHybridAuth(_request as any)
 
-    if (!session) {
+    if (!auth?.success || !auth.userId) {
       return createErrorResponse('Unauthorized', 401)
     }
 
     // Check if user has access to delete this chat
-    const { hasAccess } = await checkChatAccess(chatId, session.user.id)
+    const { hasAccess } = await checkChatAccess(chatId, auth.userId!)
 
     if (!hasAccess) {
       return createErrorResponse('Chat not found or access denied', 404)

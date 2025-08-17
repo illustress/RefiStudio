@@ -44,6 +44,7 @@ export const WorkspaceHeader = React.memo<WorkspaceHeaderProps>(
     // External hooks
     const { data: sessionData } = useSession()
     const [isClientLoading, setIsClientLoading] = useState(true)
+    const [walletAddress, setWalletAddress] = useState<string | null>(null)
 
     // Computed values
     const userName = useMemo(
@@ -51,14 +52,47 @@ export const WorkspaceHeader = React.memo<WorkspaceHeaderProps>(
       [sessionData?.user?.name, sessionData?.user?.email]
     )
 
-    const displayName = useMemo(
-      () => activeWorkspace?.name || `${userName}'s Workspace`,
-      [activeWorkspace?.name, userName]
-    )
+    const truncateAddress = (addr: string): string => {
+      if (!addr) return ''
+      const a = addr.startsWith('0x') ? addr : `0x${addr}`
+      return `${a.slice(0, 6)}…${a.slice(-4)}`
+    }
+
+    const displayName = useMemo(() => {
+      if (walletAddress) {
+        return truncateAddress(walletAddress)
+      }
+      return activeWorkspace?.name || `${userName}'s Workspace`
+    }, [walletAddress, activeWorkspace?.name, userName])
 
     // Effects
     useEffect(() => {
       setIsClientLoading(false)
+    }, [])
+
+    // Load connected wallet address for display in header
+    useEffect(() => {
+      let cancelled = false
+      async function loadWallet() {
+        try {
+          const res = await fetch('/api/auth/me', { credentials: 'include' })
+          if (!res.ok) return
+          const data = (await res.json()) as {
+            userId: string | null
+            email: string | null
+            walletAddress: string | null
+          }
+          if (!cancelled) {
+            setWalletAddress(data.walletAddress || null)
+          }
+        } catch {
+          // ignore
+        }
+      }
+      loadWallet()
+      return () => {
+        cancelled = true
+      }
     }, [])
 
     // Handle header click to toggle workspace selector
@@ -107,7 +141,7 @@ export const WorkspaceHeader = React.memo<WorkspaceHeaderProps>(
     // Render workspace info
     const renderWorkspaceInfo = () => (
       <>
-        {/* Workspace Name - Display only */}
+        {/* Wallet Address (preferred) or Workspace Name - Display only */}
         <div className='flex min-w-0 flex-1 items-center pl-1'>
           <span
             className='truncate font-medium text-sm leading-none'

@@ -1,4 +1,4 @@
-import { create } from 'zustand'
+import { createWithEqualityFn } from 'zustand/traditional'
 import { devtools } from 'zustand/middleware'
 import { createLogger } from '@/lib/logs/console/logger'
 import { API_ENDPOINTS } from '@/stores/constants'
@@ -109,7 +109,7 @@ function migrateStringToPlain(variable: Variable): Variable {
   return updated
 }
 
-export const useVariablesStore = create<VariablesStore>()(
+export const useVariablesStore = createWithEqualityFn<VariablesStore>()(
   devtools((set, get) => ({
     variables: {},
     isLoading: false,

@@ -1,10 +1,11 @@
 import { eq } from 'drizzle-orm'
 import { jwtDecode } from 'jwt-decode'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { db } from '@/db'
 import { account, user } from '@/db/schema'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
+import { decodeAndVerifySiweCookie } from '@/lib/auth/siwe-cookie'
 
 const logger = createLogger('OAuthConnectionsAPI')
 
@@ -21,23 +22,40 @@ export async function GET(request: NextRequest) {
   const requestId = crypto.randomUUID().slice(0, 8)
 
   try {
-    // Get the session
-    const session = await getSession()
-
-    // Check if the user is authenticated
-    if (!session?.user?.id) {
+    // Authenticate using hybrid auth (session, API key, SIWE)
+    const auth = await checkHybridAuth(request)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthenticated request rejected`)
       return NextResponse.json({ error: 'User not authenticated' }, { status: 401 })
     }
+    let userId = auth.userId
+
+    // Bridge: if a Better Auth session exists but a signed SIWE session is also present
+    // and refers to a different user, move any OAuth accounts to the SIWE user
+    try {
+      const siweCookie = request.cookies.get('siwe_session')?.value
+      const parsed = decodeAndVerifySiweCookie(siweCookie)
+      if (parsed) {
+        const siweUserId = parsed.uid
+        if (siweUserId && siweUserId !== userId) {
+          // Reassign any accounts owned by the Better Auth user to the SIWE user
+          await db
+            .update(account)
+            .set({ userId: siweUserId, updatedAt: new Date() })
+            .where(eq(account.userId, userId))
+          userId = siweUserId
+        }
+      }
+    } catch {}
 
     // Get all accounts for this user
-    const accounts = await db.select().from(account).where(eq(account.userId, session.user.id))
+    const accounts = await db.select().from(account).where(eq(account.userId, userId))
 
     // Get the user's email for fallback
     const userRecord = await db
       .select({ email: user.email })
       .from(user)
-      .where(eq(user.id, session.user.id))
+      .where(eq(user.id, userId))
       .limit(1)
 
     const userEmail = userRecord.length > 0 ? userRecord[0]?.email : null

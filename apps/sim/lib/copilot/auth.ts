@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { db } from '@/db'
 import { apiKey as apiKeyTable } from '@/db/schema'
 
@@ -68,7 +69,15 @@ export function createRequestTracker(short = true): RequestTracker {
  * Returns userId if authenticated, null otherwise
  */
 export async function authenticateCopilotRequest(req: NextRequest): Promise<CopilotAuthResult> {
-  // Try session authentication first
+  // Try hybrid auth first (Better Auth session, SIWE, API key)
+  try {
+    const hybrid = await checkHybridAuth(req)
+    if (hybrid?.success && hybrid.userId) {
+      return { userId: hybrid.userId, isAuthenticated: true }
+    }
+  } catch {}
+
+  // Fallback: legacy session + API key
   const session = await getSession()
   let userId: string | null = session?.user?.id || null
 
@@ -99,7 +108,19 @@ export async function authenticateCopilotRequest(req: NextRequest): Promise<Copi
  * Authenticate request using session only (no API key fallback)
  * Returns userId if authenticated, null otherwise
  */
-export async function authenticateCopilotRequestSessionOnly(): Promise<CopilotAuthResult> {
+export async function authenticateCopilotRequestSessionOnly(
+  req?: NextRequest
+): Promise<CopilotAuthResult> {
+  // If request provided, allow SIWE via hybrid auth as session-equivalent
+  if (req) {
+    try {
+      const hybrid = await checkHybridAuth(req)
+      if (hybrid?.success && hybrid.userId) {
+        return { userId: hybrid.userId, isAuthenticated: true }
+      }
+    } catch {}
+  }
+
   const session = await getSession()
   const userId = session?.user?.id || null
 

@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
   const tracker = createRequestTracker()
 
   try {
-    const { userId, isAuthenticated } = await authenticateCopilotRequestSessionOnly()
+    const { userId, isAuthenticated } = await authenticateCopilotRequestSessionOnly(req)
     if (!isAuthenticated || !userId) {
       return createUnauthorizedResponse()
     }
@@ -117,7 +117,7 @@ export async function GET(req: NextRequest) {
   const tracker = createRequestTracker()
 
   try {
-    const { userId, isAuthenticated } = await authenticateCopilotRequestSessionOnly()
+    const { userId, isAuthenticated } = await authenticateCopilotRequestSessionOnly(req)
     if (!isAuthenticated || !userId) {
       return createUnauthorizedResponse()
     }

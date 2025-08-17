@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 import { db } from '@/db'
 import { templates, workflow, workflowBlocks, workflowEdges } from '@/db/schema'
@@ -17,8 +17,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { id } = await params
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkHybridAuth(request as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized use attempt for template: ${id}`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     logger.debug(
-      `[${requestId}] Using template: ${id}, user: ${session.user.id}, workspace: ${workspaceId}`
+      `[${requestId}] Using template: ${id}, user: ${auth.userId}, workspace: ${workspaceId}`
     )
 
     // Get the template with its data
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           description: templateData.description,
           state: templateData.state,
           color: templateData.color,
-          userId: session.user.id,
+          userId: auth.userId!,
           createdAt: now,
           updatedAt: now,
           lastSynced: now,

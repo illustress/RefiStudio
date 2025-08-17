@@ -6,7 +6,7 @@ import {
   renderBatchInvitationEmail,
   renderInvitationEmail,
 } from '@/components/emails/render-email'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import {
   validateBulkInvitations,
   validateSeatAvailability,
@@ -34,9 +34,9 @@ interface WorkspaceInvitation {
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await getSession()
+    const auth = await checkHybridAuth(request as any)
 
-    if (!session?.user?.id) {
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const memberEntry = await db
       .select()
       .from(member)
-      .where(and(eq(member.organizationId, organizationId), eq(member.userId, session.user.id)))
+      .where(and(eq(member.organizationId, organizationId), eq(member.userId, auth.userId!)))
       .limit(1)
 
     if (memberEntry.length === 0) {
@@ -106,9 +106,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
  */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await getSession()
+    const auth = await checkHybridAuth(request as any)
 
-    if (!session?.user?.id) {
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -136,7 +136,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const memberEntry = await db
       .select()
       .from(member)
-      .where(and(eq(member.organizationId, organizationId), eq(member.userId, session.user.id)))
+      .where(and(eq(member.organizationId, organizationId), eq(member.userId, auth.userId!)))
       .limit(1)
 
     if (memberEntry.length === 0) {
@@ -156,7 +156,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       logger.info('Invitation validation completed', {
         organizationId,
-        userId: session.user.id,
+        userId: auth.userId!,
         emailCount: invitationEmails.length,
         result: validationResult,
       })
@@ -216,7 +216,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (isBatch && workspaceInvitations && workspaceInvitations.length > 0) {
       for (const wsInvitation of workspaceInvitations) {
         // Check if user has admin permission on this workspace
-        const canInvite = await hasWorkspaceAdminAccess(session.user.id, wsInvitation.workspaceId)
+        const canInvite = await hasWorkspaceAdminAccess(auth.userId!, wsInvitation.workspaceId)
 
         if (!canInvite) {
           return NextResponse.json(
@@ -272,7 +272,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const invitationsToCreate = emailsToInvite.map((email: string) => ({
       id: randomUUID(),
       email,
-      inviterId: session.user.id,
+      inviterId: auth.userId!,
       organizationId,
       role,
       status: 'pending' as const,
@@ -313,7 +313,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const inviter = await db
       .select({ name: user.name })
       .from(user)
-      .where(eq(user.id, session.user.id))
+      .where(eq(user.id, auth.userId!))
       .limit(1)
 
     for (const email of emailsToInvite) {
@@ -383,7 +383,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     logger.info('Organization invitations created', {
       organizationId,
-      invitedBy: session.user.id,
+      invitedBy: auth.userId!,
       invitationCount: invitationsToCreate.length,
       emails: emailsToInvite,
       role,
@@ -431,9 +431,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getSession()
+    const auth = await checkHybridAuth(request as any)
 
-    if (!session?.user?.id) {
+    if (!auth?.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -452,7 +452,7 @@ export async function DELETE(
     const memberEntry = await db
       .select()
       .from(member)
-      .where(and(eq(member.organizationId, organizationId), eq(member.userId, session.user.id)))
+      .where(and(eq(member.organizationId, organizationId), eq(member.userId, auth.userId!)))
       .limit(1)
 
     if (memberEntry.length === 0) {
@@ -491,7 +491,7 @@ export async function DELETE(
     logger.info('Organization invitation cancelled', {
       organizationId,
       invitationId,
-      cancelledBy: session.user.id,
+      cancelledBy: auth.userId!,
       email: result[0].email,
     })
 

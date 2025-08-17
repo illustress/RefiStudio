@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getSession } from '@/lib/auth'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { createLogger } from '@/lib/logs/console/logger'
 
 export const dynamic = 'force-dynamic'
@@ -120,14 +120,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const { id: workflowId } = await params
 
   try {
-    // Get the session
-    const session = await getSession()
-    if (!session?.user?.id) {
+    // Get hybrid auth
+    const auth = await checkHybridAuth(request as any)
+    if (!auth?.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized state update attempt for workflow ${workflowId}`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userId = session.user.id
+    const userId = auth.userId!
 
     // Parse and validate request body
     const body = await request.json()
