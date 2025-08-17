@@ -1,6 +1,6 @@
-import { createEnv } from "@t3-oss/env-nextjs";
-import { env as runtimeEnv } from "next-runtime-env";
-import { z } from "zod";
+import { createEnv } from '@t3-oss/env-nextjs'
+import { env as runtimeEnv } from 'next-runtime-env'
+import { z } from 'zod'
 
 /**
  * Universal environment variable getter that works in both client and server contexts.
@@ -8,8 +8,7 @@ import { z } from "zod";
  * - Server-side: Falls back to process.env when runtimeEnv returns undefined
  * - Provides seamless Docker runtime variable support for NEXT_PUBLIC_ vars
  */
-const getEnv = (variable: string) =>
-  runtimeEnv(variable) ?? process.env[variable];
+const getEnv = (variable: string) => runtimeEnv(variable) ?? process.env[variable]
 
 // biome-ignore format: keep alignment for readability
 export const env = createEnv({
@@ -254,8 +253,6 @@ export const env = createEnv({
 
 // Need this utility because t3-env is returning string for boolean values.
 export const isTruthy = (value: string | boolean | number | undefined) =>
-  typeof value === "string"
-    ? value.toLowerCase() === "true" || value === "1"
-    : Boolean(value);
+  typeof value === 'string' ? value.toLowerCase() === 'true' || value === '1' : Boolean(value)
 
-export { getEnv };
+export { getEnv }

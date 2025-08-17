@@ -3,7 +3,7 @@ import { eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
-import { checkHybridAuth } from '@/lib/auth/hybrid'
+import { getSession } from '@/lib/auth'
 import { checkServerSideUsageLimits } from '@/lib/billing'
 import { createLogger } from '@/lib/logs/console/logger'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
@@ -361,8 +361,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     // Determine trigger type based on authentication
     let triggerType: TriggerType = 'manual'
-    const auth = await checkHybridAuth(request as any)
-    if (!auth?.success || !auth.userId) {
+    const session = await getSession()
+    if (!session?.user?.id) {
       // Check for API key
       const apiKeyHeader = request.headers.get('X-API-Key')
       if (apiKeyHeader) {
@@ -485,9 +485,9 @@ export async function POST(
     let authenticatedUserId: string | null = null
     let triggerType: TriggerType = 'manual'
 
-    const auth = await checkHybridAuth(request as any)
-    if (auth?.success && auth.userId) {
-      authenticatedUserId = auth.userId
+    const session = await getSession()
+    if (session?.user?.id) {
+      authenticatedUserId = session.user.id
       triggerType = 'manual' // UI session (not rate limited)
     } else {
       const apiKeyHeader = request.headers.get('X-API-Key')

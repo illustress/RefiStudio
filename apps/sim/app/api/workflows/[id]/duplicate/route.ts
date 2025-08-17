@@ -216,6 +216,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                 | ParallelConfig
 
               // Update the config ID to match the new subflow ID
+
               ;(updatedConfig as any).id = newSubflowId
 
               // Update node references in config if they exist

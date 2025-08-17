@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { checkHybridAuth } from '@/lib/auth/hybrid'
+import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
 import { db } from '@/db'
@@ -24,8 +24,8 @@ export async function DELETE(
     const { id } = await params
     logger.debug(`[${requestId}] Deleting schedule with ID: ${id}`)
 
-    const auth = await checkHybridAuth(request as any)
-    if (!auth?.success || !auth.userId) {
+    const session = await getSession()
+    if (!session?.user?.id) {
       logger.warn(`[${requestId}] Unauthorized schedule deletion attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -53,12 +53,12 @@ export async function DELETE(
     const workflowRecord = schedules[0].workflow
 
     // Check authorization - either the user owns the workflow or has write/admin workspace permissions
-    let isAuthorized = workflowRecord.userId === auth.userId
+    let isAuthorized = workflowRecord.userId === session.user.id
 
     // If not authorized by ownership and the workflow belongs to a workspace, check workspace permissions
     if (!isAuthorized && workflowRecord.workspaceId) {
       const userPermission = await getUserEntityPermissions(
-        auth.userId!,
+        session.user.id,
         'workspace',
         workflowRecord.workspaceId
       )
@@ -92,8 +92,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const scheduleId = id
     logger.debug(`[${requestId}] Updating schedule with ID: ${scheduleId}`)
 
-    const auth = await checkHybridAuth(request as any)
-    if (!auth?.success || !auth.userId) {
+    const session = await getSession()
+    if (!session?.user?.id) {
       logger.warn(`[${requestId}] Unauthorized schedule update attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -127,7 +127,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: 'Workflow not found' }, { status: 404 })
     }
 
-    if (workflowRecord.userId !== auth.userId) {
+    if (workflowRecord.userId !== session.user.id) {
       logger.warn(`[${requestId}] User not authorized to modify this schedule: ${scheduleId}`)
       return NextResponse.json({ error: 'Not authorized to modify this schedule' }, { status: 403 })
     }
