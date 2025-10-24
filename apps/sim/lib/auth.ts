@@ -1560,10 +1560,83 @@ export const auth = betterAuth({
 
 // Server-side auth helpers
 export async function getSession() {
-  return await auth.api.getSession({
+  // Step 1: Try Better Auth session first (for OAuth users)
+  const betterAuthSession = await auth.api.getSession({
     headers: await headers(),
   })
+  
+  // If Better Auth session exists, return it
+  if (betterAuthSession?.user?.id) {
+    return betterAuthSession
+  }
+  
+  // Step 2: Fallback to SIWE session (for crypto wallet users)
+  try {
+    const { decodeAndVerifySiweCookie } = await import('@/lib/auth/siwe-cookie')
+    const headersList = await headers()
+    const cookieHeader = headersList.get('cookie')
+    
+    if (cookieHeader) {
+      // Extract siwe_session cookie value
+      const cookies = cookieHeader.split(';').map(c => c.trim())
+      const siweCookie = cookies.find(c => c.startsWith('siwe_session='))
+      
+      if (siweCookie) {
+        const cookieValue = siweCookie.split('=')[1]
+        const siwePayload = decodeAndVerifySiweCookie(cookieValue)
+        
+        if (siwePayload?.uid) {
+          // Return a session object that matches Better Auth format
+          return {
+            user: {
+              id: siwePayload.uid,
+              email: `${siwePayload.addr}@wallet.user`, // Synthetic email for wallet users
+              name: `Wallet ${siwePayload.addr.slice(0, 6)}…${siwePayload.addr.slice(-4)}`,
+              image: null,
+              emailVerified: true,
+            },
+            session: {
+              id: `siwe_${siwePayload.uid}`,
+              userId: siwePayload.uid,
+              expiresAt: new Date(siwePayload.exp * 1000),
+              token: 'siwe_session',
+              createdAt: new Date(siwePayload.iat * 1000),
+              updatedAt: new Date(siwePayload.iat * 1000),
+            }
+          }
+        }
+      }
+    }
+  } catch (error) {
+    // Log error but don't throw - fall through to return null
+    logger.debug('SIWE session fallback failed', { error })
+  }
+  
+  // No valid session found
+  return null
 }
 
 export const signIn = auth.api.signInEmail
 export const signUp = auth.api.signUpEmail
+
+// Utility functions for working with hybrid sessions
+export function isWalletUser(session: any): boolean {
+  return session?.user?.email?.includes('@wallet.user') ?? false
+}
+
+export function getWalletAddress(session: any): string | null {
+  if (!isWalletUser(session)) return null
+  return session.user.email.replace('@wallet.user', '')
+}
+
+export function getUserDisplayName(session: any): string {
+  if (!session?.user?.name) return 'Unknown User'
+  
+  // For wallet users, show a more user-friendly name
+  if (isWalletUser(session)) {
+    const address = getWalletAddress(session)
+    return address ? `Wallet ${address.slice(0, 6)}…${address.slice(-4)}` : 'Wallet User'
+  }
+  
+  return session.user.name
+}
