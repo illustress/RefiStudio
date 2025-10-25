@@ -22,7 +22,6 @@ import {
   renderOTPEmail,
   renderPasswordResetEmail,
 } from '@/components/emails/render-email'
-import { getBaseURL } from '@/lib/auth-client'
 import { sendPlanWelcomeEmail } from '@/lib/billing'
 import { authorizeSubscriptionReference } from '@/lib/billing/authorization'
 import { handleNewUser } from '@/lib/billing/core/usage'
@@ -44,6 +43,7 @@ import { quickValidateEmail } from '@/lib/email/validation'
 import { env, isTruthy } from '@/lib/env'
 import { isBillingEnabled, isEmailVerificationEnabled } from '@/lib/environment'
 import { createLogger } from '@/lib/logs/console/logger'
+import { getBaseUrl } from '@/lib/urls/utils'
 import { SSO_TRUSTED_PROVIDERS } from './sso/consts'
 
 const logger = createLogger('Auth')
@@ -60,9 +60,9 @@ if (validStripeKey) {
 }
 
 export const auth = betterAuth({
-  baseURL: getBaseURL(),
+  baseURL: getBaseUrl(),
   trustedOrigins: [
-    env.NEXT_PUBLIC_APP_URL,
+    getBaseUrl(),
     ...(env.NEXT_PUBLIC_SOCKET_URL ? [env.NEXT_PUBLIC_SOCKET_URL] : []),
   ].filter(Boolean),
   database: drizzleAdapter(db, {
@@ -152,6 +152,7 @@ export const auth = betterAuth({
         'microsoft',
         'slack',
         'reddit',
+        'webflow',
 
         // Common SSO provider patterns
         ...SSO_TRUSTED_PROVIDERS,
@@ -319,7 +320,7 @@ export const auth = betterAuth({
           tokenUrl: 'https://github.com/login/oauth/access_token',
           userInfoUrl: 'https://api.github.com/user',
           scopes: ['user:email', 'repo', 'read:user', 'workflow'],
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/github-repo`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/github-repo`,
           getUserInfo: async (tokens) => {
             try {
               const profileResponse = await fetch('https://api.github.com/user', {
@@ -400,7 +401,7 @@ export const auth = betterAuth({
             'https://www.googleapis.com/auth/gmail.labels',
           ],
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/google-email`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-email`,
         },
         {
           providerId: 'google-calendar',
@@ -414,7 +415,7 @@ export const auth = betterAuth({
             'https://www.googleapis.com/auth/calendar',
           ],
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/google-calendar`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-calendar`,
         },
         {
           providerId: 'google-drive',
@@ -428,7 +429,7 @@ export const auth = betterAuth({
             'https://www.googleapis.com/auth/drive.file',
           ],
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/google-drive`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-drive`,
         },
         {
           providerId: 'google-docs',
@@ -442,7 +443,7 @@ export const auth = betterAuth({
             'https://www.googleapis.com/auth/drive.file',
           ],
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/google-docs`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-docs`,
         },
         {
           providerId: 'google-sheets',
@@ -456,7 +457,7 @@ export const auth = betterAuth({
             'https://www.googleapis.com/auth/drive.file',
           ],
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/google-sheets`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-sheets`,
         },
 
         {
@@ -471,7 +472,7 @@ export const auth = betterAuth({
             'https://www.googleapis.com/auth/forms.responses.readonly',
           ],
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/google-forms`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-forms`,
         },
 
         {
@@ -487,7 +488,7 @@ export const auth = betterAuth({
             'https://www.googleapis.com/auth/devstorage.read_only',
           ],
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/google-vault`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-vault`,
         },
 
         {
@@ -517,7 +518,7 @@ export const auth = betterAuth({
           accessType: 'offline',
           authentication: 'basic',
           pkce: true,
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/microsoft-teams`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/microsoft-teams`,
         },
 
         {
@@ -532,7 +533,7 @@ export const auth = betterAuth({
           accessType: 'offline',
           authentication: 'basic',
           pkce: true,
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/microsoft-excel`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/microsoft-excel`,
         },
         {
           providerId: 'microsoft-planner',
@@ -554,7 +555,7 @@ export const auth = betterAuth({
           accessType: 'offline',
           authentication: 'basic',
           pkce: true,
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/microsoft-planner`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/microsoft-planner`,
         },
 
         {
@@ -578,7 +579,7 @@ export const auth = betterAuth({
           accessType: 'offline',
           authentication: 'basic',
           pkce: true,
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/outlook`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/outlook`,
         },
 
         {
@@ -593,7 +594,7 @@ export const auth = betterAuth({
           accessType: 'offline',
           authentication: 'basic',
           pkce: true,
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/onedrive`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/onedrive`,
         },
 
         {
@@ -616,7 +617,7 @@ export const auth = betterAuth({
           accessType: 'offline',
           authentication: 'basic',
           pkce: true,
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/sharepoint`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/sharepoint`,
         },
 
         {
@@ -628,7 +629,7 @@ export const auth = betterAuth({
           userInfoUrl: 'https://dummy-not-used.wealthbox.com', // Dummy URL since no user info endpoint exists
           scopes: ['login', 'data'],
           responseType: 'code',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/wealthbox`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/wealthbox`,
           getUserInfo: async (tokens) => {
             try {
               logger.info('Creating Wealthbox user profile from token data')
@@ -662,7 +663,7 @@ export const auth = betterAuth({
           scopes: ['database.read', 'database.write', 'projects.read'],
           responseType: 'code',
           pkce: true,
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/supabase`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/supabase`,
           getUserInfo: async (tokens) => {
             try {
               logger.info('Creating Supabase user profile from token data')
@@ -715,7 +716,7 @@ export const auth = betterAuth({
           responseType: 'code',
           prompt: 'consent',
           authentication: 'basic',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/x`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/x`,
           getUserInfo: async (tokens) => {
             try {
               const response = await fetch(
@@ -774,7 +775,7 @@ export const auth = betterAuth({
           accessType: 'offline',
           authentication: 'basic',
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/confluence`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/confluence`,
           getUserInfo: async (tokens) => {
             try {
               const response = await fetch('https://api.atlassian.com/me', {
@@ -824,7 +825,7 @@ export const auth = betterAuth({
           accessType: 'offline',
           authentication: 'basic',
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/discord`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/discord`,
           getUserInfo: async (tokens) => {
             try {
               const response = await fetch('https://discord.com/api/users/@me', {
@@ -895,7 +896,7 @@ export const auth = betterAuth({
           accessType: 'offline',
           authentication: 'basic',
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/jira`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/jira`,
           getUserInfo: async (tokens) => {
             try {
               const response = await fetch('https://api.atlassian.com/me', {
@@ -946,7 +947,39 @@ export const auth = betterAuth({
           accessType: 'offline',
           authentication: 'basic',
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/airtable`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/airtable`,
+          getUserInfo: async (tokens) => {
+            try {
+              const response = await fetch('https://api.airtable.com/v0/meta/whoami', {
+                headers: {
+                  Authorization: `Bearer ${tokens.accessToken}`,
+                },
+              })
+
+              if (!response.ok) {
+                logger.error('Error fetching Airtable user info:', {
+                  status: response.status,
+                  statusText: response.statusText,
+                })
+                return null
+              }
+
+              const data = await response.json()
+              const now = new Date()
+
+              return {
+                id: data.id,
+                name: data.email ? data.email.split('@')[0] : 'Airtable User',
+                email: data.email || `${data.id}@airtable.user`,
+                emailVerified: !!data.email,
+                createdAt: now,
+                updatedAt: now,
+              }
+            } catch (error) {
+              logger.error('Error in Airtable getUserInfo:', { error })
+              return null
+            }
+          },
         },
 
         // Notion provider
@@ -963,7 +996,7 @@ export const auth = betterAuth({
           accessType: 'offline',
           authentication: 'basic',
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/notion`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/notion`,
           getUserInfo: async (tokens) => {
             try {
               const response = await fetch('https://api.notion.com/v1/users/me', {
@@ -1013,7 +1046,7 @@ export const auth = betterAuth({
           accessType: 'offline',
           authentication: 'basic',
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/reddit`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/reddit`,
           getUserInfo: async (tokens) => {
             try {
               const response = await fetch('https://oauth.reddit.com/api/v1/me', {
@@ -1058,7 +1091,7 @@ export const auth = betterAuth({
           tokenUrl: 'https://api.linear.app/oauth/token',
           scopes: ['read', 'write'],
           responseType: 'code',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/linear`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/linear`,
           pkce: true,
           prompt: 'consent',
           accessType: 'offline',
@@ -1145,7 +1178,7 @@ export const auth = betterAuth({
           responseType: 'code',
           accessType: 'offline',
           prompt: 'consent',
-          redirectURI: `${env.NEXT_PUBLIC_APP_URL}/api/auth/oauth2/callback/slack`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/slack`,
           getUserInfo: async (tokens) => {
             try {
               logger.info('Creating Slack bot profile from token data')
@@ -1178,6 +1211,56 @@ export const auth = betterAuth({
               }
             } catch (error) {
               logger.error('Error creating Slack bot profile:', { error })
+              return null
+            }
+          },
+        },
+
+        // Webflow provider
+        {
+          providerId: 'webflow',
+          clientId: env.WEBFLOW_CLIENT_ID as string,
+          clientSecret: env.WEBFLOW_CLIENT_SECRET as string,
+          authorizationUrl: 'https://webflow.com/oauth/authorize',
+          tokenUrl: 'https://api.webflow.com/oauth/access_token',
+          userInfoUrl: 'https://api.webflow.com/v2/token/introspect',
+          scopes: ['sites:read', 'sites:write', 'cms:read', 'cms:write'],
+          responseType: 'code',
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/webflow`,
+          getUserInfo: async (tokens) => {
+            try {
+              logger.info('Fetching Webflow user info')
+
+              const response = await fetch('https://api.webflow.com/v2/token/introspect', {
+                headers: {
+                  Authorization: `Bearer ${tokens.accessToken}`,
+                },
+              })
+
+              if (!response.ok) {
+                logger.error('Error fetching Webflow user info:', {
+                  status: response.status,
+                  statusText: response.statusText,
+                })
+                return null
+              }
+
+              const data = await response.json()
+              const now = new Date()
+
+              const userId = data.user_id || `webflow-${Date.now()}`
+              const uniqueId = `webflow-${userId}`
+
+              return {
+                id: uniqueId,
+                name: data.user_name || 'Webflow User',
+                email: `${uniqueId.replace(/[^a-zA-Z0-9]/g, '')}@webflow.user`,
+                emailVerified: false,
+                createdAt: now,
+                updatedAt: now,
+              }
+            } catch (error) {
+              logger.error('Error in Webflow getUserInfo:', { error })
               return null
             }
           },
@@ -1413,7 +1496,7 @@ export const auth = betterAuth({
               try {
                 const { invitation, organization, inviter } = data
 
-                const inviteUrl = `${env.NEXT_PUBLIC_APP_URL}/invite/${invitation.id}`
+                const inviteUrl = `${getBaseUrl()}/invite/${invitation.id}`
                 const inviterName = inviter.user?.name || 'A team member'
 
                 const html = await renderInvitationEmail(

@@ -98,7 +98,7 @@ In Sim, the Microsoft Teams integration enables your agents to interact directly
 
 ## Usage Instructions
 
-Integrate Microsoft Teams into the workflow. Can read and write chat messages, and read and write channel messages. Requires OAuth. Can be used in trigger mode to trigger a workflow when a message is sent to a chat or channel.
+Integrate Microsoft Teams into the workflow. Can read and write chat messages, and read and write channel messages. Can be used in trigger mode to trigger a workflow when a message is sent to a chat or channel.
 
 
 
@@ -113,6 +113,7 @@ Read content from a Microsoft Teams chat
 | Parameter | Type | Required | Description |
 | --------- | ---- | -------- | ----------- |
 | `chatId` | string | Yes | The ID of the chat to read from |
+| `includeAttachments` | boolean | No | Download and include message attachments \(hosted contents\) into storage |
 
 #### Output
 
@@ -125,6 +126,7 @@ Read content from a Microsoft Teams chat
 | `attachmentCount` | number | Total number of attachments found |
 | `attachmentTypes` | array | Types of attachments found |
 | `content` | string | Formatted content of chat messages |
+| `attachments` | file[] | Uploaded attachments for convenience \(flattened\) |
 
 ### `microsoft_teams_write_chat`
 
@@ -136,6 +138,7 @@ Write or update content in a Microsoft Teams chat
 | --------- | ---- | -------- | ----------- |
 | `chatId` | string | Yes | The ID of the chat to write to |
 | `content` | string | Yes | The content to write to the message |
+| `files` | file[] | No | Files to attach to the message |
 
 #### Output
 
@@ -158,6 +161,7 @@ Read content from a Microsoft Teams channel
 | --------- | ---- | -------- | ----------- |
 | `teamId` | string | Yes | The ID of the team to read from |
 | `channelId` | string | Yes | The ID of the channel to read from |
+| `includeAttachments` | boolean | No | Download and include message attachments \(hosted contents\) into storage |
 
 #### Output
 
@@ -171,6 +175,7 @@ Read content from a Microsoft Teams channel
 | `attachmentCount` | number | Total number of attachments found |
 | `attachmentTypes` | array | Types of attachments found |
 | `content` | string | Formatted content of channel messages |
+| `attachments` | file[] | Uploaded attachments for convenience \(flattened\) |
 
 ### `microsoft_teams_write_channel`
 
@@ -183,6 +188,7 @@ Write or send a message to a Microsoft Teams channel
 | `teamId` | string | Yes | The ID of the team to write to |
 | `channelId` | string | Yes | The ID of the channel to write to |
 | `content` | string | Yes | The content to write to the channel |
+| `files` | file[] | No | Files to attach to the message |
 
 #### Output
 

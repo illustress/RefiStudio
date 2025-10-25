@@ -36,7 +36,6 @@ import { VirtualBlockUtils } from '@/executor/utils/virtual-blocks'
 import type { SerializedBlock, SerializedWorkflow } from '@/serializer/types'
 import { useExecutionStore } from '@/stores/execution/store'
 import { useConsoleStore } from '@/stores/panel/console/store'
-import { useGeneralStore } from '@/stores/settings/general/store'
 
 const logger = createLogger('Executor')
 
@@ -217,7 +216,7 @@ export class Executor {
       new GenericBlockHandler(),
     ]
 
-    this.isDebugging = useGeneralStore.getState().isDebugModeEnabled
+    this.isDebugging = useExecutionStore.getState().isDebugging
   }
 
   /**
@@ -242,6 +241,7 @@ export class Executor {
   ): Promise<ExecutionResult | StreamingExecution> {
     const { setIsExecuting, setIsDebugging, setPendingBlocks, reset } = useExecutionStore.getState()
     const startTime = new Date()
+    const executorStartMs = startTime.getTime()
     let finalOutput: NormalizedBlockOutput = {}
 
     // Track workflow execution start
@@ -252,7 +252,9 @@ export class Executor {
       startTime: startTime.toISOString(),
     })
 
+    const beforeValidation = Date.now()
     this.validateWorkflow(startBlockId)
+    const validationTime = Date.now() - beforeValidation
 
     const context = this.createExecutionContext(workflowId, startTime, startBlockId)
 
@@ -268,10 +270,13 @@ export class Executor {
 
       let hasMoreLayers = true
       let iteration = 0
+      const firstBlockExecutionTime: number | null = null
       const maxIterations = 500 // Safety limit for infinite loops
 
       while (hasMoreLayers && iteration < maxIterations && !this.isCancelled) {
+        const iterationStart = Date.now()
         const nextLayer = this.getNextExecutionLayer(context)
+        const getNextLayerTime = Date.now() - iterationStart
 
         if (this.isDebugging) {
           // In debug mode, update the pending blocks and wait for user interaction
@@ -405,6 +410,7 @@ export class Executor {
             if (normalizedOutputs.length > 0) {
               finalOutput = normalizedOutputs[normalizedOutputs.length - 1]
             }
+
             // Process loop iterations - this will activate external paths when loops complete
             await this.loopManager.processLoopIterations(context)
 
@@ -2009,11 +2015,7 @@ export class Executor {
 
       // Handle error outputs and ensure object structure
       const output: NormalizedBlockOutput =
-        rawOutput && typeof rawOutput === 'object' && rawOutput.error
-          ? { error: rawOutput.error, status: rawOutput.status || 500 }
-          : typeof rawOutput === 'object' && rawOutput !== null
-            ? rawOutput
-            : { result: rawOutput }
+        typeof rawOutput === 'object' && rawOutput !== null ? rawOutput : { result: rawOutput }
 
       // Update the context with the execution result
       // Use virtual block ID for parallel executions

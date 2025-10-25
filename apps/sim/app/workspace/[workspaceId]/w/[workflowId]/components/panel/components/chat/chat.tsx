@@ -476,6 +476,8 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
     focusInput(100)
   }, [
     chatMessage,
+    chatFiles,
+    isUploadingFiles,
     activeWorkflowId,
     isExecuting,
     promptHistory,
@@ -487,6 +489,9 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
     appendMessageContent,
     finalizeMessageStream,
     focusInput,
+    setChatMessage,
+    setChatFiles,
+    setUploadErrors,
   ])
 
   // Handle key press
@@ -694,7 +699,13 @@ export function Chat({ chatMessage, setChatMessage }: ChatProps) {
               <div className='mb-2 flex flex-wrap gap-1.5'>
                 {chatFiles.map((file) => {
                   const isImage = file.type.startsWith('image/')
-                  const previewUrl = isImage ? URL.createObjectURL(file.file) : null
+                  let previewUrl: string | null = null
+                  if (isImage) {
+                    const blobUrl = URL.createObjectURL(file.file)
+                    if (blobUrl.startsWith('blob:')) {
+                      previewUrl = blobUrl
+                    }
+                  }
                   const getFileIcon = (type: string) => {
                     if (type.includes('pdf'))
                       return <FileText className='h-5 w-5 text-muted-foreground' />

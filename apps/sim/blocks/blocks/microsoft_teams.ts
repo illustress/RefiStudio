@@ -51,6 +51,8 @@ export const MicrosoftTeamsBlock: BlockConfig<MicrosoftTeamsResponse> = {
         'Group.ReadWrite.All',
         'Team.ReadBasic.All',
         'offline_access',
+        'Files.Read',
+        'Sites.Read.All',
       ],
       placeholder: 'Select Microsoft account',
       required: true,
@@ -127,7 +129,6 @@ export const MicrosoftTeamsBlock: BlockConfig<MicrosoftTeamsResponse> = {
       mode: 'advanced',
       condition: { field: 'operation', value: ['read_channel', 'write_channel'] },
     },
-    // Create-specific Fields
     {
       id: 'content',
       title: 'Message',
@@ -137,13 +138,38 @@ export const MicrosoftTeamsBlock: BlockConfig<MicrosoftTeamsResponse> = {
       condition: { field: 'operation', value: ['write_chat', 'write_channel'] },
       required: true,
     },
+    // File upload (basic mode)
+    {
+      id: 'attachmentFiles',
+      title: 'Attachments',
+      type: 'file-upload',
+      layout: 'full',
+      canonicalParamId: 'files',
+      placeholder: 'Upload files to attach',
+      condition: { field: 'operation', value: ['write_chat', 'write_channel'] },
+      mode: 'basic',
+      multiple: true,
+      required: false,
+    },
+    // Variable reference (advanced mode)
+    {
+      id: 'files',
+      title: 'File Attachments',
+      type: 'short-input',
+      layout: 'full',
+      canonicalParamId: 'files',
+      placeholder: 'Reference files from previous blocks',
+      condition: { field: 'operation', value: ['write_chat', 'write_channel'] },
+      mode: 'advanced',
+      required: false,
+    },
     {
       id: 'triggerConfig',
       title: 'Trigger Configuration',
       type: 'trigger-config',
       layout: 'full',
       triggerProvider: 'microsoftteams',
-      availableTriggers: ['microsoftteams_webhook'],
+      availableTriggers: ['microsoftteams_webhook', 'microsoftteams_chat_subscription'],
     },
   ],
   tools: {
@@ -178,21 +204,27 @@ export const MicrosoftTeamsBlock: BlockConfig<MicrosoftTeamsResponse> = {
           manualChatId,
           channelId,
           manualChannelId,
+          attachmentFiles,
+          files,
           ...rest
         } = params
 
-        // Use the selected IDs or the manually entered ones
         const effectiveTeamId = (teamId || manualTeamId || '').trim()
         const effectiveChatId = (chatId || manualChatId || '').trim()
         const effectiveChannelId = (channelId || manualChannelId || '').trim()
 
-        const baseParams = {
+        const baseParams: Record<string, any> = {
           ...rest,
           credential,
         }
 
+        // Add files if provided
+        const fileParam = attachmentFiles || files
+        if (fileParam && (operation === 'write_chat' || operation === 'write_channel')) {
+          baseParams.files = fileParam
+        }
+
         if (operation === 'read_chat' || operation === 'write_chat') {
-          // Don't pass empty chatId - let the tool handle the error
           if (!effectiveChatId) {
             throw new Error('Chat ID is required. Please select a chat or enter a chat ID.')
           }
@@ -224,16 +256,16 @@ export const MicrosoftTeamsBlock: BlockConfig<MicrosoftTeamsResponse> = {
     teamId: { type: 'string', description: 'Team identifier' },
     manualTeamId: { type: 'string', description: 'Manual team identifier' },
     content: { type: 'string', description: 'Message content' },
+    attachmentFiles: { type: 'json', description: 'Files to attach (UI upload)' },
+    files: { type: 'json', description: 'Files to attach (UserFile array)' },
   },
   outputs: {
-    // Read operation outputs
     content: { type: 'string', description: 'Formatted message content from chat/channel' },
     metadata: { type: 'json', description: 'Message metadata with full details' },
     messageCount: { type: 'number', description: 'Number of messages retrieved' },
     messages: { type: 'json', description: 'Array of message objects' },
     totalAttachments: { type: 'number', description: 'Total number of attachments' },
     attachmentTypes: { type: 'json', description: 'Array of attachment content types' },
-    // Write operation outputs
     updatedContent: {
       type: 'boolean',
       description: 'Whether content was successfully updated/sent',
@@ -241,14 +273,12 @@ export const MicrosoftTeamsBlock: BlockConfig<MicrosoftTeamsResponse> = {
     messageId: { type: 'string', description: 'ID of the created/sent message' },
     createdTime: { type: 'string', description: 'Timestamp when message was created' },
     url: { type: 'string', description: 'Web URL to the message' },
-    // Individual message fields (from read operations)
     sender: { type: 'string', description: 'Message sender display name' },
     messageTimestamp: { type: 'string', description: 'Individual message timestamp' },
     messageType: {
       type: 'string',
       description: 'Type of message (message, systemEventMessage, etc.)',
     },
-    // Trigger outputs
     type: { type: 'string', description: 'Type of Teams message' },
     id: { type: 'string', description: 'Unique message identifier' },
     timestamp: { type: 'string', description: 'Message timestamp' },

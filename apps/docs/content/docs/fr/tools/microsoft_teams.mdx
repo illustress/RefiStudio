@@ -108,20 +108,22 @@ Lire le contenu d'un chat Microsoft Teams
 #### Entrée
 
 | Paramètre | Type | Obligatoire | Description |
-| --------- | ---- | ---------- | ----------- |
-| `chatId` | chaîne | Oui | L'ID du chat à lire |
+| --------- | ---- | -------- | ----------- |
+| `chatId` | chaîne | Oui | L'ID de la conversation à partir de laquelle lire |
+| `includeAttachments` | booléen | Non | Télécharger et inclure les pièces jointes des messages \(contenus hébergés\) dans le stockage |
 
 #### Sortie
 
 | Paramètre | Type | Description |
 | --------- | ---- | ----------- |
-| `success` | booléen | Statut de réussite de l'opération de lecture du chat Teams |
-| `messageCount` | nombre | Nombre de messages récupérés du chat |
-| `chatId` | chaîne | ID du chat qui a été lu |
-| `messages` | tableau | Tableau d'objets de messages de chat |
+| `success` | booléen | Statut de réussite de l'opération de lecture de la conversation Teams |
+| `messageCount` | nombre | Nombre de messages récupérés de la conversation |
+| `chatId` | chaîne | ID de la conversation qui a été lue |
+| `messages` | tableau | Tableau d'objets de messages de conversation |
 | `attachmentCount` | nombre | Nombre total de pièces jointes trouvées |
 | `attachmentTypes` | tableau | Types de pièces jointes trouvées |
-| `content` | chaîne | Contenu formaté des messages de chat |
+| `content` | chaîne | Contenu formaté des messages de conversation |
+| `attachments` | fichier[] | Pièces jointes téléchargées pour plus de commodité \(aplaties\) |
 
 ### `microsoft_teams_write_chat`
 
@@ -133,6 +135,7 @@ Lire le contenu d'un chat Microsoft Teams
 | --------- | ---- | -------- | ----------- |
 | `chatId` | chaîne | Oui | L'ID de la conversation dans laquelle écrire |
 | `content` | chaîne | Oui | Le contenu à écrire dans le message |
+| `files` | fichier[] | Non | Fichiers à joindre au message |
 
 #### Sortie
 
@@ -155,6 +158,7 @@ Lire le contenu d'un canal Microsoft Teams
 | --------- | ---- | -------- | ----------- |
 | `teamId` | chaîne | Oui | L'ID de l'équipe à partir de laquelle lire |
 | `channelId` | chaîne | Oui | L'ID du canal à partir duquel lire |
+| `includeAttachments` | booléen | Non | Télécharger et inclure les pièces jointes des messages \(contenus hébergés\) dans le stockage |
 
 #### Sortie
 
@@ -162,12 +166,13 @@ Lire le contenu d'un canal Microsoft Teams
 | --------- | ---- | ----------- |
 | `success` | booléen | Statut de réussite de l'opération de lecture du canal Teams |
 | `messageCount` | nombre | Nombre de messages récupérés du canal |
-| `teamId` | chaîne | ID de l'équipe à partir de laquelle la lecture a été effectuée |
-| `channelId` | chaîne | ID du canal à partir duquel la lecture a été effectuée |
+| `teamId` | chaîne | ID de l'équipe qui a été lue |
+| `channelId` | chaîne | ID du canal qui a été lu |
 | `messages` | tableau | Tableau d'objets de messages du canal |
 | `attachmentCount` | nombre | Nombre total de pièces jointes trouvées |
 | `attachmentTypes` | tableau | Types de pièces jointes trouvées |
 | `content` | chaîne | Contenu formaté des messages du canal |
+| `attachments` | fichier[] | Pièces jointes téléchargées pour plus de commodité \(aplaties\) |
 
 ### `microsoft_teams_write_channel`
 
@@ -176,10 +181,11 @@ Lire le contenu d'un canal Microsoft Teams
 #### Entrée
 
 | Paramètre | Type | Obligatoire | Description |
-| --------- | ---- | ---------- | ----------- |
-| `teamId` | chaîne | Oui | L'ID de l'équipe à laquelle écrire |
-| `channelId` | chaîne | Oui | L'ID du canal auquel écrire |
+| --------- | ---- | -------- | ----------- |
+| `teamId` | chaîne | Oui | L'ID de l'équipe dans laquelle écrire |
+| `channelId` | chaîne | Oui | L'ID du canal dans lequel écrire |
 | `content` | chaîne | Oui | Le contenu à écrire dans le canal |
+| `files` | fichier[] | Non | Fichiers à joindre au message |
 
 #### Sortie
 

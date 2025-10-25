@@ -1,5 +1,5 @@
 {
-  "items": [
+  "pages": [
     "index",
     "airtable",
     "arxiv",
@@ -20,6 +20,7 @@
     "google_forms",
     "google_search",
     "google_sheets",
+    "google_vault",
     "huggingface",
     "hunter",
     "image_generator",
@@ -65,10 +66,12 @@
     "typeform",
     "vision",
     "wealthbox",
+    "webflow",
     "webhook",
     "whatsapp",
     "wikipedia",
     "x",
-    "youtube"
+    "youtube",
+    "zep"
   ]
 }

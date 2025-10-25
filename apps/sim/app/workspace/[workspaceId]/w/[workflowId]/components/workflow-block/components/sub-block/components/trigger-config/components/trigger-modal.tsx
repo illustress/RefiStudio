@@ -11,10 +11,19 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { createLogger } from '@/lib/logs/console/logger'
+import { getBaseUrl } from '@/lib/urls/utils'
 import { cn } from '@/lib/utils'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
+import { getTrigger } from '@/triggers'
 import type { TriggerConfig } from '@/triggers/types'
 import { CredentialSelector } from '../../credential-selector/credential-selector'
 import { TriggerConfigSection } from './trigger-config-section'
@@ -32,19 +41,30 @@ interface TriggerModalProps {
   onDelete?: () => Promise<boolean>
   triggerId?: string
   blockId: string
+  availableTriggers?: string[]
+  selectedTriggerId?: string | null
+  onTriggerChange?: (triggerId: string) => void
 }
 
 export function TriggerModal({
   isOpen,
   onClose,
   triggerPath,
-  triggerDef,
+  triggerDef: propTriggerDef,
   triggerConfig: initialConfig,
   onSave,
   onDelete,
   triggerId,
   blockId,
+  availableTriggers = [],
+  selectedTriggerId,
+  onTriggerChange,
 }: TriggerModalProps) {
+  // Use selectedTriggerId to get the current trigger definition dynamically
+  const triggerDef = selectedTriggerId
+    ? getTrigger(selectedTriggerId) || propTriggerDef
+    : propTriggerDef
+
   const [config, setConfig] = useState<Record<string, any>>(initialConfig)
   const [isSaving, setIsSaving] = useState(false)
 
@@ -76,6 +96,7 @@ export function TriggerModal({
   const [dynamicOptions, setDynamicOptions] = useState<
     Record<string, Array<{ id: string; name: string }>>
   >({})
+  const [loadingFields, setLoadingFields] = useState<Record<string, boolean>>({})
   const lastCredentialIdRef = useRef<string | null>(null)
   const [testUrl, setTestUrl] = useState<string | null>(null)
   const [testUrlExpiresAt, setTestUrlExpiresAt] = useState<string | null>(null)
@@ -93,6 +114,9 @@ export function TriggerModal({
       } else if (triggerDef.provider === 'airtable') {
         if (typeof next.baseId === 'string') next.baseId = ''
         if (typeof next.tableId === 'string') next.tableId = ''
+      } else if (triggerDef.provider === 'webflow') {
+        if (typeof next.siteId === 'string') next.siteId = ''
+        if (typeof next.collectionId === 'string') next.collectionId = ''
       }
       return next
     })
@@ -115,6 +139,8 @@ export function TriggerModal({
     // Only update if there are actually default values to apply
     if (Object.keys(defaultConfig).length > 0) {
       setConfig(mergedConfig)
+      // Reset dirty snapshot when defaults are applied to avoid false-disabled Save
+      initialConfigRef.current = mergedConfig
     }
   }, [triggerDef.configFields, initialConfig])
 
@@ -155,6 +181,8 @@ export function TriggerModal({
               void loadGmailLabels(currentCredentialId)
             } else if (triggerDef.provider === 'outlook') {
               void loadOutlookFolders(currentCredentialId)
+            } else if (triggerDef.provider === 'webflow') {
+              void loadWebflowSites()
             }
           }
           return
@@ -175,6 +203,8 @@ export function TriggerModal({
             void loadGmailLabels(currentCredentialId)
           } else if (triggerDef.provider === 'outlook') {
             void loadOutlookFolders(currentCredentialId)
+          } else if (triggerDef.provider === 'webflow') {
+            void loadWebflowSites()
           }
         }
       }
@@ -240,9 +270,57 @@ export function TriggerModal({
     }
   }
 
-  // Generate webhook path and URL
+  const loadWebflowSites = async () => {
+    setLoadingFields((prev) => ({ ...prev, siteId: true }))
+    try {
+      const response = await fetch('/api/tools/webflow/sites')
+      if (response.ok) {
+        const data = await response.json()
+        if (data.sites && Array.isArray(data.sites)) {
+          setDynamicOptions((prev) => ({
+            ...prev,
+            siteId: data.sites,
+          }))
+        }
+      } else {
+        logger.error('Failed to load Webflow sites:', response.statusText)
+      }
+    } catch (error) {
+      logger.error('Error loading Webflow sites:', error)
+    } finally {
+      setLoadingFields((prev) => ({ ...prev, siteId: false }))
+    }
+  }
+
+  const loadWebflowCollections = async (siteId: string) => {
+    setLoadingFields((prev) => ({ ...prev, collectionId: true }))
+    try {
+      const response = await fetch(`/api/tools/webflow/collections?siteId=${siteId}`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.collections && Array.isArray(data.collections)) {
+          setDynamicOptions((prev) => ({
+            ...prev,
+            collectionId: data.collections,
+          }))
+        }
+      } else {
+        logger.error('Failed to load Webflow collections:', response.statusText)
+      }
+    } catch (error) {
+      logger.error('Error loading Webflow collections:', error)
+    } finally {
+      setLoadingFields((prev) => ({ ...prev, collectionId: false }))
+    }
+  }
+
   useEffect(() => {
-    // For triggers that don't use webhooks (like Gmail polling), skip URL generation
+    if (triggerDef.provider === 'webflow' && config.siteId) {
+      void loadWebflowCollections(config.siteId)
+    }
+  }, [config.siteId, triggerDef.provider])
+
+  useEffect(() => {
     if (triggerDef.requiresCredentials && !triggerDef.webhook) {
       setWebhookUrl('')
       setGeneratedPath('')
@@ -251,20 +329,16 @@ export function TriggerModal({
 
     let finalPath = triggerPath
 
-    // If no path exists and we haven't generated one yet, generate one
     if (!finalPath && !generatedPath) {
-      // Use UUID format consistent with other webhooks
       const newPath = crypto.randomUUID()
       setGeneratedPath(newPath)
       finalPath = newPath
     } else if (generatedPath && !triggerPath) {
-      // Use the already generated path
       finalPath = generatedPath
     }
 
     if (finalPath) {
-      const baseUrl = window.location.origin
-      setWebhookUrl(`${baseUrl}/api/webhooks/trigger/${finalPath}`)
+      setWebhookUrl(`${getBaseUrl()}/api/webhooks/trigger/${finalPath}`)
     }
   }, [
     triggerPath,
@@ -398,12 +472,13 @@ export function TriggerModal({
       return false
     }
 
-    // Check required fields
+    // Check required fields (skip credential fields - they're stored separately in subblock store)
     for (const [fieldId, fieldDef] of Object.entries(triggerDef.configFields)) {
-      if (fieldDef.required && !config[fieldId]) {
+      if (fieldDef.required && fieldDef.type !== 'credential' && !config[fieldId]) {
         return false
       }
     }
+
     return true
   }
 
@@ -445,6 +520,49 @@ export function TriggerModal({
 
         <div className='flex-1 overflow-y-auto px-6 py-6'>
           <div className='space-y-6'>
+            {/* Trigger Type Selector - only show if multiple triggers available */}
+            {availableTriggers && availableTriggers.length > 1 && onTriggerChange && (
+              <div className='space-y-2 rounded-md border border-border bg-card p-4 shadow-sm'>
+                <Label htmlFor='trigger-type-select' className='font-medium text-sm'>
+                  Trigger Type
+                </Label>
+                <p className='text-muted-foreground text-sm'>
+                  Choose how this workflow should be triggered
+                </p>
+                <Select
+                  value={selectedTriggerId || availableTriggers[0]}
+                  onValueChange={(value) => {
+                    if (onTriggerChange && value !== selectedTriggerId) {
+                      onTriggerChange(value)
+                    }
+                  }}
+                  disabled={!!triggerId}
+                >
+                  <SelectTrigger id='trigger-type-select' className='h-10'>
+                    <SelectValue placeholder='Select trigger type' />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableTriggers.map((triggerId) => {
+                      const trigger = getTrigger(triggerId)
+                      return (
+                        <SelectItem key={triggerId} value={triggerId}>
+                          <div className='flex items-center gap-2'>
+                            {trigger?.icon && <trigger.icon className='h-4 w-4' />}
+                            <span>{trigger?.name || triggerId}</span>
+                          </div>
+                        </SelectItem>
+                      )
+                    })}
+                  </SelectContent>
+                </Select>
+                {triggerId && (
+                  <p className='text-muted-foreground text-xs'>
+                    Delete the trigger to change the trigger type
+                  </p>
+                )}
+              </div>
+            )}
+
             {triggerDef.requiresCredentials && triggerDef.credentialProvider && (
               <div className='space-y-2 rounded-md border border-border bg-card p-4 shadow-sm'>
                 <h3 className='font-medium text-sm'>Credentials</h3>
@@ -473,6 +591,7 @@ export function TriggerModal({
               onChange={handleConfigChange}
               webhookUrl={webhookUrl}
               dynamicOptions={dynamicOptions}
+              loadingFields={loadingFields}
             />
 
             {triggerDef.webhook && (
@@ -619,17 +738,15 @@ export function TriggerModal({
                   (!(hasConfigChanged || hasCredentialChanged) && !!triggerId)
                 }
                 className={cn(
-                  'h-9 rounded-[8px]',
+                  'w-[140px] rounded-[8px]',
                   isConfigValid() && (hasConfigChanged || hasCredentialChanged || !triggerId)
                     ? 'bg-primary hover:bg-primary/90'
-                    : '',
-                  isSaving &&
-                    'relative after:absolute after:inset-0 after:animate-pulse after:bg-white/20'
+                    : ''
                 )}
-                size='default'
+                size='sm'
               >
                 {isSaving && (
-                  <div className='mr-2 h-4 w-4 animate-spin rounded-full border-[1.5px] border-current border-t-transparent' />
+                  <div className='h-4 w-4 animate-spin rounded-full border-[1.5px] border-current border-t-transparent' />
                 )}
                 {isSaving ? 'Saving...' : 'Save Changes'}
               </Button>

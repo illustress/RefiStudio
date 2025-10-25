@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import ReactFlow, {
   Background,
@@ -52,7 +52,7 @@ import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 const logger = createLogger('Workflow')
 
-// Define custom node and edge types
+// Define custom node and edge types - memoized outside component to prevent re-creation
 const nodeTypes: NodeTypes = {
   workflowBlock: WorkflowBlock,
   subflowNode: SubflowNodeComponent,
@@ -61,6 +61,15 @@ const edgeTypes: EdgeTypes = {
   default: WorkflowEdge,
   workflowEdge: WorkflowEdge, // Keep for backward compatibility
 }
+
+// Memoized ReactFlow props to prevent unnecessary re-renders
+const defaultEdgeOptions = { type: 'custom' }
+const connectionLineStyle = {
+  stroke: '#94a3b8',
+  strokeWidth: 2,
+  strokeDasharray: '5,5',
+}
+const snapGrid: [number, number] = [20, 20]
 
 interface SelectedEdgeInfo {
   id: string
@@ -83,7 +92,8 @@ const WorkflowContent = React.memo(() => {
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null)
   const [potentialParentId, setPotentialParentId] = useState<string | null>(null)
   // State for tracking validation errors
-  const [nestedSubflowErrors, setNestedSubflowErrors] = useState<Set<string>>(new Set())
+  // Use a function initializer to ensure the Set is only created once
+  const [nestedSubflowErrors, setNestedSubflowErrors] = useState<Set<string>>(() => new Set())
   // Enhanced edge selection with parent context and unique identifier
   const [selectedEdgeInfo, setSelectedEdgeInfo] = useState<SelectedEdgeInfo | null>(null)
 
@@ -242,8 +252,7 @@ const WorkflowContent = React.memo(() => {
   } = useCollaborativeWorkflow()
 
   // Execution and debug mode state
-  const { activeBlockIds, pendingBlocks } = useExecutionStore()
-  const { isDebugModeEnabled } = useGeneralStore()
+  const { activeBlockIds, pendingBlocks, isDebugging } = useExecutionStore()
   const [dragStartParentId, setDragStartParentId] = useState<string | null>(null)
 
   // Helper function to validate workflow for nested subflows
@@ -1188,14 +1197,46 @@ const WorkflowContent = React.memo(() => {
     validateAndNavigate()
   }, [params.workflowId, workflows, isLoading, workspaceId, router])
 
+  // Cache block configs to prevent unnecessary re-fetches
+  const blockConfigCache = useRef<Map<string, any>>(new Map())
+  const getBlockConfig = useCallback((type: string) => {
+    if (!blockConfigCache.current.has(type)) {
+      blockConfigCache.current.set(type, getBlock(type))
+    }
+    return blockConfigCache.current.get(type)
+  }, [])
+
+  // Track previous blocks hash to prevent unnecessary recalculations
+  const prevBlocksHashRef = useRef<string>('')
+  const prevBlocksRef = useRef(blocks)
+
+  // Create a stable hash of block properties that affect node rendering
+  // This prevents nodes from recreating when only subblock values change
+  const blocksHash = useMemo(() => {
+    // Only recalculate hash if blocks reference actually changed
+    if (prevBlocksRef.current === blocks) {
+      return prevBlocksHashRef.current
+    }
+
+    prevBlocksRef.current = blocks
+    const hash = Object.values(blocks)
+      .map(
+        (b) =>
+          `${b.id}:${b.type}:${b.name}:${b.position.x.toFixed(0)}:${b.position.y.toFixed(0)}:${b.isWide}:${b.height}:${b.data?.parentId || ''}`
+      )
+      .join('|')
+
+    prevBlocksHashRef.current = hash
+    return hash
+  }, [blocks])
+
   // Transform blocks and loops into ReactFlow nodes
   const nodes = useMemo(() => {
     const nodeArray: any[] = []
 
     // Add block nodes
     Object.entries(blocks).forEach(([blockId, block]) => {
-      if (!block.type || !block.name) {
-        logger.warn(`Skipping invalid block: ${blockId}`, { block })
+      if (!block || !block.type || !block.name) {
         return
       }
 
@@ -1220,7 +1261,7 @@ const WorkflowContent = React.memo(() => {
         return
       }
 
-      const blockConfig = getBlock(block.type)
+      const blockConfig = getBlockConfig(block.type)
       if (!blockConfig) {
         logger.error(`No configuration found for block type: ${block.type}`, {
           block,
@@ -1231,8 +1272,9 @@ const WorkflowContent = React.memo(() => {
       const position = block.position
 
       const isActive = activeBlockIds.has(block.id)
-      const isPending = isDebugModeEnabled && pendingBlocks.includes(block.id)
+      const isPending = isDebugging && pendingBlocks.includes(block.id)
 
+      // Create stable node object - React Flow will handle shallow comparison
       nodeArray.push({
         id: block.id,
         type: 'workflowBlock',
@@ -1242,7 +1284,7 @@ const WorkflowContent = React.memo(() => {
         extent: block.data?.extent || undefined,
         data: {
           type: block.type,
-          config: blockConfig,
+          config: blockConfig, // Cached config reference
           name: block.name,
           isActive,
           isPending,
@@ -1254,7 +1296,15 @@ const WorkflowContent = React.memo(() => {
     })
 
     return nodeArray
-  }, [blocks, activeBlockIds, pendingBlocks, isDebugModeEnabled, nestedSubflowErrors])
+  }, [
+    blocksHash,
+    blocks,
+    activeBlockIds,
+    pendingBlocks,
+    isDebugging,
+    nestedSubflowErrors,
+    getBlockConfig,
+  ])
 
   // Update nodes - use store version to avoid collaborative feedback loops
   const onNodesChange = useCallback(
@@ -1915,17 +1965,19 @@ const WorkflowContent = React.memo(() => {
           edgeTypes={edgeTypes}
           onDrop={effectivePermissions.canEdit ? onDrop : undefined}
           onDragOver={effectivePermissions.canEdit ? onDragOver : undefined}
-          fitView
+          onInit={(instance) => {
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                instance.fitView({ padding: 0.3 })
+              })
+            })
+          }}
           minZoom={0.1}
           maxZoom={1.3}
           panOnScroll
-          defaultEdgeOptions={{ type: 'custom' }}
+          defaultEdgeOptions={defaultEdgeOptions}
           proOptions={{ hideAttribution: true }}
-          connectionLineStyle={{
-            stroke: '#94a3b8',
-            strokeWidth: 2,
-            strokeDasharray: '5,5',
-          }}
+          connectionLineStyle={connectionLineStyle}
           connectionLineType={ConnectionLineType.SmoothStep}
           onNodeClick={(e, _node) => {
             e.stopPropagation()
@@ -1945,8 +1997,11 @@ const WorkflowContent = React.memo(() => {
           onNodeDragStop={effectivePermissions.canEdit ? onNodeDragStop : undefined}
           onNodeDragStart={effectivePermissions.canEdit ? onNodeDragStart : undefined}
           snapToGrid={false}
-          snapGrid={[20, 20]}
+          snapGrid={snapGrid}
           elevateEdgesOnSelect={true}
+          // Performance optimizations
+          onlyRenderVisibleElements={true}
+          deleteKeyCode={null}
           elevateNodesOnSelect={true}
           autoPanOnConnect={effectivePermissions.canEdit}
           autoPanOnNodeDrag={effectivePermissions.canEdit}

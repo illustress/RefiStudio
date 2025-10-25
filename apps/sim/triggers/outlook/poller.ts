@@ -38,11 +38,11 @@ export const outlookPollingTrigger: TriggerConfig = {
       description: 'Automatically mark emails as read after processing',
       required: false,
     },
-    includeRawEmail: {
+    includeAttachments: {
       type: 'boolean',
-      label: 'Include Raw Email Data',
+      label: 'Include Attachments',
       defaultValue: false,
-      description: 'Include the complete raw Microsoft Graph API response in the trigger payload',
+      description: 'Download and include email attachments in the trigger payload',
       required: false,
     },
   },
@@ -89,6 +89,10 @@ export const outlookPollingTrigger: TriggerConfig = {
         type: 'boolean',
         description: 'Whether email has attachments',
       },
+      attachments: {
+        type: 'file[]',
+        description: 'Array of email attachments as files (if includeAttachments is enabled)',
+      },
       isRead: {
         type: 'boolean',
         description: 'Whether email is read',
@@ -109,10 +113,6 @@ export const outlookPollingTrigger: TriggerConfig = {
     timestamp: {
       type: 'string',
       description: 'Event timestamp',
-    },
-    rawEmail: {
-      type: 'json',
-      description: 'Complete raw email data from Microsoft Graph API (if enabled)',
     },
   },
 
@@ -136,6 +136,7 @@ export const outlookPollingTrigger: TriggerConfig = {
       bodyHtml:
         '<div><p>Hi Team,</p><p>Please find attached the Q1 2025 business review document. We need to discuss the results in our next meeting.</p><p>Best regards,<br>Manager</p></div>',
       hasAttachments: true,
+      attachments: [],
       isRead: false,
       folderId: 'AQMkADg1OWUyZjg4LWJkNGYtNDFhYy04OGVjAC4AAAJzE3bU',
       messageId: 'AAMkADg1OWUyZjg4LWJkNGYtNDFhYy04OGVjLWVkM2VhY2YzYTcwZgBGAAAAAACE3bU',

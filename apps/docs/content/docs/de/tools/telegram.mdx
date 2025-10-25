@@ -87,12 +87,128 @@ Sendet Nachrichten an Telegram-Kanäle oder Benutzer über die Telegram Bot API.
 
 | Parameter | Typ | Beschreibung |
 | --------- | ---- | ----------- |
-| `success` | boolean | Erfolgsstatus der Telegram-Nachrichtensendung |
-| `messageId` | number | Eindeutige Telegram-Nachrichtenkennung |
-| `chatId` | string | Ziel-Chat-ID, wohin die Nachricht gesendet wurde |
-| `text` | string | Textinhalt der gesendeten Nachricht |
-| `timestamp` | number | Unix-Zeitstempel, wann die Nachricht gesendet wurde |
-| `from` | object | Informationen über den Bot, der die Nachricht gesendet hat |
+| `message` | string | Erfolgs- oder Fehlermeldung |
+| `data` | object | Telegram-Nachrichtendaten |
+
+## Hinweise
+
+- Kategorie: `tools`
+- Typ: `telegram`
+
+#### Eingabe
+
+| Parameter | Typ | Erforderlich | Beschreibung |
+| --------- | ---- | -------- | ----------- |
+| `botToken` | string | Ja | Ihr Telegram Bot API-Token |
+| `chatId` | string | Ja | Ziel-Telegram-Chat-ID |
+| `messageId` | string | Ja | Nachrichten-ID zum Löschen |
+
+#### Ausgabe
+
+| Parameter | Typ | Beschreibung |
+| --------- | ---- | ----------- |
+| `message` | string | Erfolgs- oder Fehlermeldung |
+| `data` | object | Ergebnis des Löschvorgangs |
+
+### `telegram_send_photo`
+
+Senden Sie Fotos an Telegram-Kanäle oder Benutzer über die Telegram Bot API.
+
+#### Eingabe
+
+| Parameter | Typ | Erforderlich | Beschreibung |
+| --------- | ---- | -------- | ----------- |
+| `botToken` | string | Ja | Ihr Telegram Bot API-Token |
+| `chatId` | string | Ja | Ziel-Telegram-Chat-ID |
+| `photo` | string | Ja | Zu sendendes Foto. Übergeben Sie eine file_id oder HTTP-URL |
+| `caption` | string | Nein | Fotobeschreibung (optional) |
+
+#### Ausgabe
+
+| Parameter | Typ | Beschreibung |
+| --------- | ---- | ----------- |
+| `message` | string | Erfolgs- oder Fehlermeldung |
+| `data` | object | Telegram-Nachrichtendaten einschließlich optionaler Foto(s) |
+
+### `telegram_send_video`
+
+Senden Sie Videos an Telegram-Kanäle oder Benutzer über die Telegram Bot API.
+
+#### Eingabe
+
+| Parameter | Typ | Erforderlich | Beschreibung |
+| --------- | ---- | -------- | ----------- |
+| `botToken` | string | Ja | Ihr Telegram Bot API-Token |
+| `chatId` | string | Ja | Ziel-Telegram-Chat-ID |
+| `video` | string | Ja | Zu sendendes Video. Übergeben Sie eine file_id oder HTTP-URL |
+| `caption` | string | Nein | Videobeschreibung (optional) |
+
+#### Ausgabe
+
+| Parameter | Typ | Beschreibung |
+| --------- | ---- | ----------- |
+| `message` | string | Erfolgs- oder Fehlermeldung |
+| `data` | object | Telegram-Nachrichtendaten einschließlich optionaler Medien |
+
+### `telegram_send_audio`
+
+Senden Sie Audiodateien an Telegram-Kanäle oder Benutzer über die Telegram Bot API.
+
+#### Eingabe
+
+| Parameter | Typ | Erforderlich | Beschreibung |
+| --------- | ---- | -------- | ----------- |
+| `botToken` | string | Ja | Ihr Telegram Bot API-Token |
+| `chatId` | string | Ja | Ziel-Telegram-Chat-ID |
+| `audio` | string | Ja | Zu sendende Audiodatei. Übergeben Sie eine file_id oder HTTP-URL |
+| `caption` | string | Nein | Audio-Beschriftung \(optional\) |
+
+#### Ausgabe
+
+| Parameter | Typ | Beschreibung |
+| --------- | ---- | ----------- |
+| `message` | string | Erfolgs- oder Fehlermeldung |
+| `data` | object | Telegram-Nachrichtendaten einschließlich Sprach-/Audioinformationen |
+
+### `telegram_send_animation`
+
+Senden Sie Animationen (GIFs) an Telegram-Kanäle oder Benutzer über die Telegram Bot API.
+
+#### Eingabe
+
+| Parameter | Typ | Erforderlich | Beschreibung |
+| --------- | ---- | -------- | ----------- |
+| `botToken` | string | Ja | Ihr Telegram Bot API-Token |
+| `chatId` | string | Ja | Ziel-Telegram-Chat-ID |
+| `animation` | string | Ja | Zu sendende Animation. Übergeben Sie eine file_id oder HTTP-URL |
+| `caption` | string | Nein | Animations-Beschriftung \(optional\) |
+
+#### Ausgabe
+
+| Parameter | Typ | Beschreibung |
+| --------- | ---- | ----------- |
+| `message` | string | Erfolgs- oder Fehlermeldung |
+| `data` | object | Telegram-Nachrichtendaten einschließlich optionaler Medien |
+
+### `telegram_send_document`
+
+Senden Sie Dokumente (PDF, ZIP, DOC, etc.) an Telegram-Kanäle oder -Nutzer über die Telegram Bot API.
+
+#### Eingabe
+
+| Parameter | Typ | Erforderlich | Beschreibung |
+| --------- | ---- | -------- | ----------- |
+| `botToken` | string | Ja | Ihr Telegram Bot API-Token |
+| `chatId` | string | Ja | Ziel-Telegram-Chat-ID |
+| `files` | file[] | Nein | Zu sendende Dokumentdatei \(PDF, ZIP, DOC, etc.\). Maximale Größe: 50MB |
+| `caption` | string | Nein | Dokumentbeschreibung \(optional\) |
+
+#### Ausgabe
+
+| Parameter | Typ | Beschreibung |
+| --------- | ---- | ----------- |
+| `message` | string | Erfolgs- oder Fehlermeldung |
+| `data` | object | Telegram-Nachrichtendaten einschließlich Dokument |
 
 ## Hinweise
 

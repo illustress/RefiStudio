@@ -50,7 +50,6 @@ import {
 import { useFolderStore } from '@/stores/folders/store'
 import { useOperationQueueStore } from '@/stores/operation-queue/store'
 import { usePanelStore } from '@/stores/panel/store'
-import { useGeneralStore } from '@/stores/settings/general/store'
 import { useSubscriptionStore } from '@/stores/subscription/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
@@ -86,8 +85,7 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   const workspaceId = params.workspaceId as string
 
   // Store hooks
-  const { history, revertToHistoryState, lastSaved, setNeedsRedeploymentFlag, blocks } =
-    useWorkflowStore()
+  const { lastSaved, setNeedsRedeploymentFlag, blocks } = useWorkflowStore()
   const {
     workflows,
     updateWorkflow,
@@ -105,7 +103,6 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   const userPermissions = useUserPermissionsContext()
 
   // Debug mode state
-  const { isDebugModeEnabled, toggleDebugMode } = useGeneralStore()
   const { isDebugging, pendingBlocks, handleStepDebug, handleCancelDebug, handleResumeDebug } =
     useWorkflowExecution()
 
@@ -875,9 +872,6 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
       }
 
       // Start debugging
-      if (!isDebugModeEnabled) {
-        toggleDebugMode()
-      }
       if (usageExceeded) {
         openSubscriptionSettings()
       } else {
@@ -888,11 +882,9 @@ export function ControlBar({ hasValidationErrors = false }: ControlBarProps) {
   }, [
     userPermissions.canRead,
     isDebugging,
-    isDebugModeEnabled,
     usageExceeded,
     blocks,
     handleCancelDebug,
-    toggleDebugMode,
     handleRunWorkflow,
     openConsolePanel,
   ])

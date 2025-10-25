@@ -1,7 +1,4 @@
-import { db } from '@sim/db'
-import { userStats } from '@sim/db/schema'
 import { tasks } from '@trigger.dev/sdk'
-import { eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
@@ -11,6 +8,7 @@ import { checkServerSideUsageLimits } from '@/lib/billing'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import { env } from '@/lib/env'
 import { getPersonalAndWorkspaceEnv } from '@/lib/environment/utils'
+import { processExecutionFiles } from '@/lib/execution/files'
 import { createLogger } from '@/lib/logs/console/logger'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
@@ -23,11 +21,7 @@ import {
   workflowHasResponseBlock,
 } from '@/lib/workflows/utils'
 import { validateWorkflowAccess } from '@/app/api/workflows/middleware'
-import {
-  createErrorResponse,
-  createSuccessResponse,
-  processApiWorkflowField,
-} from '@/app/api/workflows/utils'
+import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import { Executor } from '@/executor'
 import type { ExecutionResult } from '@/executor/types'
 import { Serializer } from '@/serializer'
@@ -123,10 +117,12 @@ export async function executeWorkflow(
     workflowTriggerType?: 'api' | 'chat' // Which trigger block type to look for (default: 'api')
     onStream?: (streamingExec: any) => Promise<void> // Callback for streaming agent responses
     onBlockComplete?: (blockId: string, output: any) => Promise<void> // Callback when any block completes
-  }
-): Promise<any> {
+    skipLoggingComplete?: boolean // When true, skip calling loggingSession.safeComplete (for streaming)
+  },
+  providedExecutionId?: string
+): Promise<ExecutionResult> {
   const workflowId = workflow.id
-  const executionId = uuidv4()
+  const executionId = providedExecutionId || uuidv4()
 
   const executionKey = `${workflowId}:${requestId}`
 
@@ -135,7 +131,8 @@ export async function executeWorkflow(
     throw new Error('Execution is already running')
   }
 
-  const loggingSession = new LoggingSession(workflowId, executionId, 'api', requestId)
+  const triggerType: TriggerType = streamConfig?.workflowTriggerType || 'api'
+  const loggingSession = new LoggingSession(workflowId, executionId, triggerType, requestId)
 
   const usageCheck = await checkServerSideUsageLimits(actorUserId)
   if (usageCheck.isExceeded) {
@@ -368,23 +365,22 @@ export async function executeWorkflow(
 
     if (result.success) {
       await updateWorkflowRunCounts(workflowId)
-
-      await db
-        .update(userStats)
-        .set({
-          totalApiCalls: sql`total_api_calls + 1`,
-          lastActive: sql`now()`,
-        })
-        .where(eq(userStats.userId, actorUserId))
     }
 
-    await loggingSession.safeComplete({
-      endedAt: new Date().toISOString(),
-      totalDurationMs: totalDuration || 0,
-      finalOutput: result.output || {},
-      traceSpans: (traceSpans || []) as any,
-      workflowInput: processedInput,
-    })
+    if (!streamConfig?.skipLoggingComplete) {
+      await loggingSession.safeComplete({
+        endedAt: new Date().toISOString(),
+        totalDurationMs: totalDuration || 0,
+        finalOutput: result.output || {},
+        traceSpans: traceSpans || [],
+        workflowInput: processedInput,
+      })
+    } else {
+      result._streamingMetadata = {
+        loggingSession,
+        processedInput,
+      }
+    }
 
     return result
   } catch (error: any) {
@@ -569,6 +565,9 @@ export async function POST(
       input: rawInput,
     } = extractExecutionParams(request as NextRequest, parsedBody)
 
+    // Generate executionId early so it can be used for file uploads
+    const executionId = uuidv4()
+
     let processedInput = rawInput
     logger.info(`[${requestId}] Raw input received:`, JSON.stringify(rawInput, null, 2))
 
@@ -599,16 +598,18 @@ export async function POST(
           const executionContext = {
             workspaceId: validation.workflow.workspaceId,
             workflowId,
+            executionId,
           }
 
           for (const fileField of fileFields) {
             const fieldValue = rawInput[fileField.name]
 
             if (fieldValue && typeof fieldValue === 'object') {
-              const uploadedFiles = await processApiWorkflowField(
+              const uploadedFiles = await processExecutionFiles(
                 fieldValue,
                 executionContext,
-                requestId
+                requestId,
+                isAsync
               )
 
               if (uploadedFiles.length > 0) {
@@ -761,6 +762,7 @@ export async function POST(
             workflowTriggerType,
           },
           createFilteredResult,
+          executionId,
         })
 
         return new NextResponse(stream, {
@@ -774,7 +776,8 @@ export async function POST(
         requestId,
         input,
         authenticatedUserId,
-        undefined
+        undefined,
+        executionId
       )
 
       const hasResponseBlock = workflowHasResponseBlock(result)

@@ -9,23 +9,22 @@ import {
   InvalidRequestError,
 } from '@/app/api/files/utils'
 
-// Allowlist of permitted file extensions for security
 const ALLOWED_EXTENSIONS = new Set([
-  // Documents
   'pdf',
   'doc',
   'docx',
   'txt',
   'md',
-  // Images (safe formats)
   'png',
   'jpg',
   'jpeg',
   'gif',
-  // Data files
   'csv',
   'xlsx',
   'xls',
+  'json',
+  'yaml',
+  'yml',
 ])
 
 /**
@@ -50,19 +49,16 @@ export async function POST(request: NextRequest) {
 
     const formData = await request.formData()
 
-    // Check if multiple files are being uploaded or a single file
     const files = formData.getAll('file') as File[]
 
     if (!files || files.length === 0) {
       throw new InvalidRequestError('No files provided')
     }
 
-    // Get optional scoping parameters for execution-scoped storage
     const workflowId = formData.get('workflowId') as string | null
     const executionId = formData.get('executionId') as string | null
     const workspaceId = formData.get('workspaceId') as string | null
 
-    // Log storage mode
     const usingCloudStorage = isUsingCloudStorage()
     logger.info(`Using storage mode: ${usingCloudStorage ? 'Cloud' : 'Local'} for file upload`)
 
@@ -70,11 +66,12 @@ export async function POST(request: NextRequest) {
       logger.info(
         `Uploading files for execution-scoped storage: workflow=${workflowId}, execution=${executionId}`
       )
+    } else if (workspaceId) {
+      logger.info(`Uploading files for workspace-scoped storage: workspace=${workspaceId}`)
     }
 
     const uploadResults = []
 
-    // Process each file
     for (const file of files) {
       const originalName = file.name
 
@@ -88,9 +85,8 @@ export async function POST(request: NextRequest) {
       const bytes = await file.arrayBuffer()
       const buffer = Buffer.from(bytes)
 
-      // For execution-scoped files, use the dedicated execution file storage
+      // Priority 1: Execution-scoped storage (temporary, 5 min expiry)
       if (workflowId && executionId) {
-        // Use the dedicated execution file storage system
         const { uploadExecutionFile } = await import('@/lib/workflows/execution-file-storage')
         const userFile = await uploadExecutionFile(
           {
@@ -107,13 +103,51 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      // Upload to cloud or local storage using the standard uploadFile function
+      // Priority 2: Workspace-scoped storage (persistent, no expiry)
+      if (workspaceId) {
+        try {
+          const { uploadWorkspaceFile } = await import('@/lib/uploads/workspace-files')
+          const userFile = await uploadWorkspaceFile(
+            workspaceId,
+            session.user.id,
+            buffer,
+            originalName,
+            file.type || 'application/octet-stream'
+          )
+
+          uploadResults.push(userFile)
+          continue
+        } catch (workspaceError) {
+          // Check error type
+          const errorMessage =
+            workspaceError instanceof Error ? workspaceError.message : 'Upload failed'
+          const isDuplicate = errorMessage.includes('already exists')
+          const isStorageLimitError =
+            errorMessage.includes('Storage limit exceeded') ||
+            errorMessage.includes('storage limit')
+
+          logger.warn(`Workspace file upload failed: ${errorMessage}`)
+
+          // Determine appropriate status code
+          let statusCode = 500
+          if (isDuplicate) statusCode = 409
+          else if (isStorageLimitError) statusCode = 413
+
+          return NextResponse.json(
+            {
+              success: false,
+              error: errorMessage,
+              isDuplicate,
+            },
+            { status: statusCode }
+          )
+        }
+      }
+
       try {
         logger.info(`Uploading file: ${originalName}`)
         const result = await uploadFile(buffer, originalName, file.type, file.size)
 
-        // Generate a presigned URL for cloud storage with appropriate expiry
-        // Regular files get 24 hours (execution files are handled above)
         let presignedUrl: string | undefined
         if (usingCloudStorage) {
           try {
@@ -144,7 +178,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Return all file information
     if (uploadResults.length === 1) {
       return NextResponse.json(uploadResults[0])
     }
@@ -155,7 +188,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Handle preflight requests
 export async function OPTIONS() {
   return createOptionsResponse()
 }

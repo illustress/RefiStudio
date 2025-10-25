@@ -150,14 +150,15 @@ Envoyer des e-mails avec Outlook
 #### Entrée
 
 | Paramètre | Type | Obligatoire | Description |
-| --------- | ---- | ----------- | ----------- |
-| `to` | chaîne | Oui | Adresse e-mail du destinataire |
-| `subject` | chaîne | Oui | Objet de l'e-mail |
-| `body` | chaîne | Oui | Contenu du corps de l'e-mail |
-| `replyToMessageId` | chaîne | Non | ID du message auquel répondre \(pour le fil de discussion\) |
-| `conversationId` | chaîne | Non | ID de conversation pour le fil de discussion |
-| `cc` | chaîne | Non | Destinataires en CC \(séparés par des virgules\) |
-| `bcc` | chaîne | Non | Destinataires en BCC \(séparés par des virgules\) |
+| --------- | ---- | ---------- | ----------- |
+| `to` | string | Oui | Adresse e-mail du destinataire |
+| `subject` | string | Oui | Objet de l'e-mail |
+| `body` | string | Oui | Contenu du corps de l'e-mail |
+| `replyToMessageId` | string | Non | ID du message auquel répondre \(pour le fil de discussion\) |
+| `conversationId` | string | Non | ID de conversation pour le fil de discussion |
+| `cc` | string | Non | Destinataires en CC \(séparés par des virgules\) |
+| `bcc` | string | Non | Destinataires en BCC \(séparés par des virgules\) |
+| `attachments` | file[] | Non | Fichiers à joindre à l'e-mail |
 
 #### Sortie
 
@@ -175,12 +176,13 @@ Rédiger des e-mails avec Outlook
 #### Entrée
 
 | Paramètre | Type | Obligatoire | Description |
-| --------- | ---- | -------- | ----------- |
+| --------- | ---- | ---------- | ----------- |
 | `to` | string | Oui | Adresse e-mail du destinataire |
 | `subject` | string | Oui | Objet de l'e-mail |
 | `body` | string | Oui | Contenu du corps de l'e-mail |
 | `cc` | string | Non | Destinataires en CC \(séparés par des virgules\) |
 | `bcc` | string | Non | Destinataires en BCC \(séparés par des virgules\) |
+| `attachments` | file[] | Non | Fichiers à joindre au brouillon d'e-mail |
 
 #### Sortie
 
@@ -200,16 +202,18 @@ Lire des e-mails depuis Outlook
 #### Entrée
 
 | Paramètre | Type | Obligatoire | Description |
-| --------- | ---- | -------- | ----------- |
+| --------- | ---- | ---------- | ----------- |
 | `folder` | string | Non | ID du dossier pour lire les e-mails \(par défaut : Boîte de réception\) |
 | `maxResults` | number | Non | Nombre maximum d'e-mails à récupérer \(par défaut : 1, max : 10\) |
+| `includeAttachments` | boolean | Non | Télécharger et inclure les pièces jointes des e-mails |
 
 #### Sortie
 
 | Paramètre | Type | Description |
 | --------- | ---- | ----------- |
-| `message` | string | Message de succès ou d'état |
-| `results` | array | Tableau d'objets de messages électroniques |
+| `message` | string | Message de succès ou de statut |
+| `results` | array | Tableau d'objets de messages e-mail |
+| `attachments` | file[] | Toutes les pièces jointes des e-mails regroupées de tous les e-mails |
 
 ### `outlook_forward`
 

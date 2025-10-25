@@ -64,7 +64,7 @@ This allows for powerful automation scenarios such as sending notifications, ale
 
 ## Usage Instructions
 
-Integrate Slack into the workflow. Can send messages, create canvases, and read messages. Requires OAuth. Can be used in trigger mode to trigger a workflow when a message is sent to a channel.
+Integrate Slack into the workflow. Can send messages, create canvases, and read messages. Requires Bot Token instead of OAuth in advanced mode. Can be used in trigger mode to trigger a workflow when a message is sent to a channel.
 
 
 
@@ -82,6 +82,7 @@ Send messages to Slack channels or users through the Slack API. Supports Slack m
 | `botToken` | string | No | Bot token for Custom Bot |
 | `channel` | string | Yes | Target Slack channel \(e.g., #general\) |
 | `text` | string | Yes | Message text to send \(supports Slack mrkdwn formatting\) |
+| `files` | file[] | No | Files to attach to the message |
 
 #### Output
 

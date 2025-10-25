@@ -77,6 +77,7 @@ export interface CopilotState {
     | 'gpt-4.1'
     | 'o3'
     | 'claude-4-sonnet'
+    | 'claude-4.5-haiku'
     | 'claude-4.5-sonnet'
     | 'claude-4.1-opus'
   agentPrefetch: boolean
@@ -124,13 +125,24 @@ export interface CopilotState {
   currentUserMessageId?: string | null
 
   // Per-message metadata captured at send-time for reliable stats
+
+  // Context usage tracking for percentage pill
+  contextUsage: {
+    usage: number
+    percentage: number
+    model: string
+    contextWindow: number
+    when: 'start' | 'end'
+    estimatedTokens?: number
+  } | null
 }
 
 export interface CopilotActions {
   setMode: (mode: CopilotMode) => void
-  setSelectedModel: (model: CopilotStore['selectedModel']) => void
+  setSelectedModel: (model: CopilotStore['selectedModel']) => Promise<void>
   setAgentPrefetch: (prefetch: boolean) => void
   setEnabledModels: (models: string[] | null) => void
+  fetchContextUsage: () => Promise<void>
 
   setWorkflowId: (workflowId: string | null) => Promise<void>
   validateCurrentChat: () => boolean
@@ -146,6 +158,7 @@ export interface CopilotActions {
       stream?: boolean
       fileAttachments?: MessageFileAttachment[]
       contexts?: ChatContext[]
+      messageId?: string
     }
   ) => Promise<void>
   abortMessage: () => void

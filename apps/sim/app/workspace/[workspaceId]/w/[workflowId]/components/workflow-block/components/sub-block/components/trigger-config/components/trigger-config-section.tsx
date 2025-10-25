@@ -26,6 +26,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { cn } from '@/lib/utils'
 import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-accessible-reference-prefixes'
 import type { TriggerConfig } from '@/triggers/types'
+import { CredentialSelector } from '../../credential-selector/credential-selector'
 
 interface TriggerConfigSectionProps {
   blockId: string
@@ -34,6 +35,7 @@ interface TriggerConfigSectionProps {
   onChange: (fieldId: string, value: any) => void
   webhookUrl: string
   dynamicOptions?: Record<string, Array<{ id: string; name: string }> | string[]>
+  loadingFields?: Record<string, boolean>
 }
 
 export function TriggerConfigSection({
@@ -43,6 +45,7 @@ export function TriggerConfigSection({
   onChange,
   webhookUrl,
   dynamicOptions = {},
+  loadingFields = {},
 }: TriggerConfigSectionProps) {
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({})
   const [copied, setCopied] = useState<string | null>(null)
@@ -79,30 +82,47 @@ export function TriggerConfigSection({
           </div>
         )
 
-      case 'select':
+      case 'select': {
+        const rawOptions = dynamicOptions?.[fieldId] || fieldDef.options || []
+        const isLoading = loadingFields[fieldId] || false
+
+        const availableOptions = Array.isArray(rawOptions)
+          ? rawOptions.map((option: any) => {
+              if (typeof option === 'string') {
+                return { id: option, name: option }
+              }
+              return option
+            })
+          : []
+
         return (
           <div className='space-y-2'>
-            <Label htmlFor={fieldId}>
+            <Label htmlFor={fieldId} className='font-medium text-sm'>
               {fieldDef.label}
               {fieldDef.required && <span className='ml-1 text-red-500'>*</span>}
             </Label>
-            <Select value={value} onValueChange={(value) => onChange(fieldId, value)}>
-              <SelectTrigger>
-                <SelectValue placeholder={fieldDef.placeholder} />
+            {fieldDef.description && (
+              <p className='text-muted-foreground text-sm'>{fieldDef.description}</p>
+            )}
+            <Select
+              value={value}
+              onValueChange={(value) => onChange(fieldId, value)}
+              disabled={isLoading}
+            >
+              <SelectTrigger id={fieldId} className='h-10'>
+                <SelectValue placeholder={isLoading ? 'Loading...' : fieldDef.placeholder} />
               </SelectTrigger>
               <SelectContent>
-                {fieldDef.options?.map((option: string) => (
-                  <SelectItem key={option} value={option}>
-                    {option}
+                {availableOptions.map((option: any) => (
+                  <SelectItem key={option.id} value={option.id}>
+                    {option.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {fieldDef.description && (
-              <p className='text-muted-foreground text-sm'>{fieldDef.description}</p>
-            )}
           </div>
         )
+      }
 
       case 'multiselect': {
         const selectedValues = Array.isArray(value) ? value : []
@@ -222,6 +242,30 @@ export function TriggerConfigSection({
           </div>
         )
 
+      case 'credential':
+        return (
+          <div className='space-y-2'>
+            <Label htmlFor={fieldId}>
+              {fieldDef.label}
+              {fieldDef.required && <span className='ml-1 text-red-500'>*</span>}
+            </Label>
+            <CredentialSelector
+              blockId={blockId}
+              subBlock={{
+                id: fieldId,
+                type: 'oauth-input' as const,
+                placeholder: fieldDef.placeholder || `Select ${fieldDef.provider} credential`,
+                provider: fieldDef.provider as any,
+                requiredScopes: fieldDef.requiredScopes || [],
+              }}
+              previewValue={value}
+            />
+            {fieldDef.description && (
+              <p className='text-muted-foreground text-sm'>{fieldDef.description}</p>
+            )}
+          </div>
+        )
+
       default: // string
         return (
           <div className='mb-4 space-y-1'>
@@ -326,9 +370,14 @@ export function TriggerConfigSection({
     }
   }
 
+  // Show webhook URL only for manual webhooks (have webhook config but no OAuth auto-registration)
+  // Auto-registered webhooks (like Webflow, Airtable) have requiresCredentials and register via API
+  // Polling triggers (like Gmail) don't have webhook property at all
+  const shouldShowWebhookUrl = webhookUrl && triggerDef.webhook && !triggerDef.requiresCredentials
+
   return (
     <div className='space-y-4 rounded-md border border-border bg-card p-4 shadow-sm'>
-      {webhookUrl && (
+      {shouldShowWebhookUrl && (
         <div className='mb-4 space-y-1'>
           <div className='flex items-center gap-2'>
             <Label className='font-medium text-sm'>Webhook URL</Label>

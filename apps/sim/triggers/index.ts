@@ -5,12 +5,21 @@ import { genericWebhookTrigger } from './generic'
 import { githubWebhookTrigger } from './github'
 import { gmailPollingTrigger } from './gmail'
 import { googleFormsWebhookTrigger } from './googleforms/webhook'
-import { microsoftTeamsWebhookTrigger } from './microsoftteams'
+import {
+  microsoftTeamsChatSubscriptionTrigger,
+  microsoftTeamsWebhookTrigger,
+} from './microsoftteams'
 import { outlookPollingTrigger } from './outlook'
 import { slackWebhookTrigger } from './slack'
 import { stripeWebhookTrigger } from './stripe/webhook'
 import { telegramWebhookTrigger } from './telegram'
 import type { TriggerConfig, TriggerRegistry } from './types'
+import {
+  webflowCollectionItemChangedTrigger,
+  webflowCollectionItemCreatedTrigger,
+  webflowCollectionItemDeletedTrigger,
+  webflowFormSubmissionTrigger,
+} from './webflow'
 import { whatsappWebhookTrigger } from './whatsapp'
 
 // Central registry of all available triggers
@@ -21,11 +30,16 @@ export const TRIGGER_REGISTRY: TriggerRegistry = {
   github_webhook: githubWebhookTrigger,
   gmail_poller: gmailPollingTrigger,
   microsoftteams_webhook: microsoftTeamsWebhookTrigger,
+  microsoftteams_chat_subscription: microsoftTeamsChatSubscriptionTrigger,
   outlook_poller: outlookPollingTrigger,
   stripe_webhook: stripeWebhookTrigger,
   telegram_webhook: telegramWebhookTrigger,
   whatsapp_webhook: whatsappWebhookTrigger,
   google_forms_webhook: googleFormsWebhookTrigger,
+  webflow_collection_item_created: webflowCollectionItemCreatedTrigger,
+  webflow_collection_item_changed: webflowCollectionItemChangedTrigger,
+  webflow_collection_item_deleted: webflowCollectionItemDeletedTrigger,
+  webflow_form_submission: webflowFormSubmissionTrigger,
 }
 
 // Utility functions for working with triggers

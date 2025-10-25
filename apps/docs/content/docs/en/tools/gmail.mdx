@@ -51,7 +51,7 @@ In Sim, the Gmail integration enables your agents to send, read, and search emai
 
 ## Usage Instructions
 
-Integrate Gmail into the workflow. Can send, read, and search emails. Requires OAuth. Can be used in trigger mode to trigger a workflow when a new email is received.
+Integrate Gmail into the workflow. Can send, read, and search emails. Can be used in trigger mode to trigger a workflow when a new email is received.
 
 
 
@@ -70,6 +70,7 @@ Send emails using Gmail
 | `body` | string | Yes | Email body content |
 | `cc` | string | No | CC recipients \(comma-separated\) |
 | `bcc` | string | No | BCC recipients \(comma-separated\) |
+| `attachments` | file[] | No | Files to attach to the email |
 
 #### Output
 
@@ -91,6 +92,7 @@ Draft emails using Gmail
 | `body` | string | Yes | Email body content |
 | `cc` | string | No | CC recipients \(comma-separated\) |
 | `bcc` | string | No | BCC recipients \(comma-separated\) |
+| `attachments` | file[] | No | Files to attach to the email draft |
 
 #### Output
 

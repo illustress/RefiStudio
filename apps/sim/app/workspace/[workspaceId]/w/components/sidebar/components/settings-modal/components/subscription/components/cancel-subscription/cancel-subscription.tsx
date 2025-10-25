@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useSession, useSubscription } from '@/lib/auth-client'
 import { createLogger } from '@/lib/logs/console/logger'
+import { getBaseUrl } from '@/lib/urls/utils'
 import { cn } from '@/lib/utils'
 import { useOrganizationStore } from '@/stores/organization'
 import { useSubscriptionStore } from '@/stores/subscription/store'
@@ -89,7 +90,7 @@ export function CancelSubscription({ subscription, subscriptionData }: CancelSub
         throw new Error('Subscription management not available')
       }
 
-      const returnUrl = window.location.origin + window.location.pathname.split('/w/')[0]
+      const returnUrl = getBaseUrl() + window.location.pathname.split('/w/')[0]
 
       const cancelParams: any = {
         returnUrl,
@@ -234,7 +235,12 @@ export function CancelSubscription({ subscription, subscriptionData }: CancelSub
                 ? 'Your subscription is set to cancel at the end of the billing period. You can reactivate it or manage other settings.'
                 : `You'll be redirected to Stripe to manage your subscription. You'll keep access until ${formatDate(
                     periodEndDate
-                  )}, then downgrade to free plan.`}
+                  )}, then downgrade to free plan.`}{' '}
+              {!isCancelAtPeriodEnd && (
+                <span className='text-red-500 dark:text-red-500'>
+                  This action cannot be undone.
+                </span>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
 

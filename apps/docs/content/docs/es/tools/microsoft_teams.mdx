@@ -108,8 +108,9 @@ Leer contenido de un chat de Microsoft Teams
 #### Entrada
 
 | Parámetro | Tipo | Obligatorio | Descripción |
-| --------- | ---- | ----------- | ----------- |
+| --------- | ---- | -------- | ----------- |
 | `chatId` | string | Sí | El ID del chat del que leer |
+| `includeAttachments` | boolean | No | Descargar e incluir archivos adjuntos de mensajes \(contenidos alojados\) en el almacenamiento |
 
 #### Salida
 
@@ -122,6 +123,7 @@ Leer contenido de un chat de Microsoft Teams
 | `attachmentCount` | number | Número total de archivos adjuntos encontrados |
 | `attachmentTypes` | array | Tipos de archivos adjuntos encontrados |
 | `content` | string | Contenido formateado de los mensajes de chat |
+| `attachments` | file[] | Archivos adjuntos subidos para mayor comodidad \(aplanados\) |
 
 ### `microsoft_teams_write_chat`
 
@@ -131,8 +133,9 @@ Escribir o actualizar contenido en un chat de Microsoft Teams
 
 | Parámetro | Tipo | Obligatorio | Descripción |
 | --------- | ---- | -------- | ----------- |
-| `chatId` | string | Sí | El ID del chat donde escribir |
-| `content` | string | Sí | El contenido a escribir en el mensaje |
+| `chatId` | string | Sí | El ID del chat en el que escribir |
+| `content` | string | Sí | El contenido para escribir en el mensaje |
+| `files` | file[] | No | Archivos para adjuntar al mensaje |
 
 #### Salida
 
@@ -155,6 +158,7 @@ Leer contenido de un canal de Microsoft Teams
 | --------- | ---- | -------- | ----------- |
 | `teamId` | string | Sí | El ID del equipo del que leer |
 | `channelId` | string | Sí | El ID del canal del que leer |
+| `includeAttachments` | boolean | No | Descargar e incluir archivos adjuntos de mensajes \(contenidos alojados\) en el almacenamiento |
 
 #### Salida
 
@@ -168,6 +172,7 @@ Leer contenido de un canal de Microsoft Teams
 | `attachmentCount` | number | Número total de archivos adjuntos encontrados |
 | `attachmentTypes` | array | Tipos de archivos adjuntos encontrados |
 | `content` | string | Contenido formateado de los mensajes del canal |
+| `attachments` | file[] | Archivos adjuntos subidos para mayor comodidad \(aplanados\) |
 
 ### `microsoft_teams_write_channel`
 
@@ -177,9 +182,10 @@ Escribir o enviar un mensaje a un canal de Microsoft Teams
 
 | Parámetro | Tipo | Obligatorio | Descripción |
 | --------- | ---- | -------- | ----------- |
-| `teamId` | string | Sí | El ID del equipo al que escribir |
-| `channelId` | string | Sí | El ID del canal al que escribir |
+| `teamId` | string | Sí | El ID del equipo en el que escribir |
+| `channelId` | string | Sí | El ID del canal en el que escribir |
 | `content` | string | Sí | El contenido para escribir en el canal |
+| `files` | file[] | No | Archivos para adjuntar al mensaje |
 
 #### Salida
 

@@ -4,9 +4,9 @@ import { and, desc, eq } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
-import { env } from '@/lib/env'
 import { createLogger } from '@/lib/logs/console/logger'
 import { getUserEntityPermissions } from '@/lib/permissions/utils'
+import { getBaseUrl } from '@/lib/urls/utils'
 import { generateRequestId } from '@/lib/utils'
 import { getOAuthToken } from '@/app/api/auth/oauth/utils'
 
@@ -136,10 +136,15 @@ export async function POST(request: NextRequest) {
     let finalPath = path
     const credentialBasedProviders = ['gmail', 'outlook']
     const isCredentialBased = credentialBasedProviders.includes(provider)
+    // Treat Microsoft Teams chat subscription as credential-based for path generation purposes
+    const isMicrosoftTeamsChatSubscription =
+      provider === 'microsoftteams' &&
+      typeof providerConfig === 'object' &&
+      providerConfig?.triggerId === 'microsoftteams_chat_subscription'
 
     // If path is missing
     if (!finalPath || finalPath.trim() === '') {
-      if (isCredentialBased) {
+      if (isCredentialBased || isMicrosoftTeamsChatSubscription) {
         // Try to reuse existing path for this workflow+block if one exists
         if (blockId) {
           const existingForBlock = await db
@@ -151,7 +156,7 @@ export async function POST(request: NextRequest) {
           if (existingForBlock.length > 0) {
             finalPath = existingForBlock[0].path
             logger.info(
-              `[${requestId}] Reusing existing dummy path for ${provider} trigger: ${finalPath}`
+              `[${requestId}] Reusing existing generated path for ${provider} trigger: ${finalPath}`
             )
           }
         }
@@ -159,7 +164,7 @@ export async function POST(request: NextRequest) {
         // If still no path, generate a new dummy path (first-time save)
         if (!finalPath || finalPath.trim() === '') {
           finalPath = `${provider}-${crypto.randomUUID()}`
-          logger.info(`[${requestId}] Generated dummy path for ${provider} trigger: ${finalPath}`)
+          logger.info(`[${requestId}] Generated webhook path for ${provider} trigger: ${finalPath}`)
         }
       } else {
         logger.warn(`[${requestId}] Missing path for webhook creation`, {
@@ -252,7 +257,12 @@ export async function POST(request: NextRequest) {
     const finalProviderConfig = providerConfig
 
     if (targetWebhookId) {
-      logger.info(`[${requestId}] Updating existing webhook for path: ${finalPath}`)
+      logger.info(`[${requestId}] Updating existing webhook for path: ${finalPath}`, {
+        webhookId: targetWebhookId,
+        provider,
+        hasCredentialId: !!(finalProviderConfig as any)?.credentialId,
+        credentialId: (finalProviderConfig as any)?.credentialId,
+      })
       const updatedResult = await db
         .update(webhook)
         .set({
@@ -265,6 +275,10 @@ export async function POST(request: NextRequest) {
         .where(eq(webhook.id, targetWebhookId))
         .returning()
       savedWebhook = updatedResult[0]
+      logger.info(`[${requestId}] Webhook updated successfully`, {
+        webhookId: savedWebhook.id,
+        savedProviderConfig: savedWebhook.providerConfig,
+      })
     } else {
       // Create a new webhook
       const webhookId = nanoid()
@@ -306,33 +320,54 @@ export async function POST(request: NextRequest) {
     }
     // --- End Airtable specific logic ---
 
-    // --- Attempt to create webhook in Telegram if provider is 'telegram' ---
-    if (savedWebhook && provider === 'telegram') {
-      logger.info(
-        `[${requestId}] Telegram provider detected. Attempting to create webhook in Telegram.`
+    // --- Microsoft Teams subscription setup ---
+    if (savedWebhook && provider === 'microsoftteams') {
+      const { createTeamsSubscription } = await import('@/lib/webhooks/webhook-helpers')
+      logger.info(`[${requestId}] Creating Teams subscription for webhook ${savedWebhook.id}`)
+
+      const success = await createTeamsSubscription(
+        request,
+        savedWebhook,
+        workflowRecord,
+        requestId
       )
-      try {
-        await createTelegramWebhookSubscription(request, userId, savedWebhook, requestId)
-      } catch (err) {
-        logger.error(`[${requestId}] Error creating Telegram webhook`, err)
+
+      if (!success) {
         return NextResponse.json(
           {
-            error: 'Failed to create webhook in Telegram',
-            details: err instanceof Error ? err.message : 'Unknown error',
+            error: 'Failed to create Teams subscription',
+            details: 'Could not create subscription with Microsoft Graph API',
           },
           { status: 500 }
         )
       }
     }
-    // --- End Telegram specific logic ---
+    // --- End Teams subscription setup ---
+
+    // --- Telegram webhook setup ---
+    if (savedWebhook && provider === 'telegram') {
+      const { createTelegramWebhook } = await import('@/lib/webhooks/webhook-helpers')
+      logger.info(`[${requestId}] Creating Telegram webhook for webhook ${savedWebhook.id}`)
+
+      const success = await createTelegramWebhook(request, savedWebhook, requestId)
+
+      if (!success) {
+        return NextResponse.json(
+          {
+            error: 'Failed to create Telegram webhook',
+          },
+          { status: 500 }
+        )
+      }
+    }
+    // --- End Telegram webhook setup ---
 
     // --- Gmail webhook setup ---
     if (savedWebhook && provider === 'gmail') {
       logger.info(`[${requestId}] Gmail provider detected. Setting up Gmail webhook configuration.`)
       try {
         const { configureGmailPolling } = await import('@/lib/webhooks/utils')
-        // Pass workflow owner for backward-compat fallback (utils prefers credentialId if present)
-        const success = await configureGmailPolling(workflowRecord.userId, savedWebhook, requestId)
+        const success = await configureGmailPolling(savedWebhook, requestId)
 
         if (!success) {
           logger.error(`[${requestId}] Failed to configure Gmail polling`)
@@ -366,12 +401,7 @@ export async function POST(request: NextRequest) {
       )
       try {
         const { configureOutlookPolling } = await import('@/lib/webhooks/utils')
-        // Pass workflow owner for backward-compat fallback (utils prefers credentialId if present)
-        const success = await configureOutlookPolling(
-          workflowRecord.userId,
-          savedWebhook,
-          requestId
-        )
+        const success = await configureOutlookPolling(savedWebhook, requestId)
 
         if (!success) {
           logger.error(`[${requestId}] Failed to configure Outlook polling`)
@@ -397,6 +427,26 @@ export async function POST(request: NextRequest) {
       }
     }
     // --- End Outlook specific logic ---
+
+    // --- Webflow webhook setup ---
+    if (savedWebhook && provider === 'webflow') {
+      logger.info(
+        `[${requestId}] Webflow provider detected. Attempting to create webhook in Webflow.`
+      )
+      try {
+        await createWebflowWebhookSubscription(request, userId, savedWebhook, requestId)
+      } catch (err) {
+        logger.error(`[${requestId}] Error creating Webflow webhook`, err)
+        return NextResponse.json(
+          {
+            error: 'Failed to create webhook in Webflow',
+            details: err instanceof Error ? err.message : 'Unknown error',
+          },
+          { status: 500 }
+        )
+      }
+    }
+    // --- End Webflow specific logic ---
 
     const status = targetWebhookId ? 200 : 201
     return NextResponse.json({ webhook: savedWebhook }, { status })
@@ -437,14 +487,7 @@ async function createAirtableWebhookSubscription(
       )
     }
 
-    if (!env.NEXT_PUBLIC_APP_URL) {
-      logger.error(
-        `[${requestId}] NEXT_PUBLIC_APP_URL not configured, cannot register Airtable webhook`
-      )
-      throw new Error('NEXT_PUBLIC_APP_URL must be configured for Airtable webhook registration')
-    }
-
-    const notificationUrl = `${env.NEXT_PUBLIC_APP_URL}/api/webhooks/trigger/${path}`
+    const notificationUrl = `${getBaseUrl()}/api/webhooks/trigger/${path}`
 
     const airtableApiUrl = `https://api.airtable.com/v0/bases/${baseId}/webhooks`
 
@@ -525,9 +568,8 @@ async function createAirtableWebhookSubscription(
     )
   }
 }
-
-// Helper function to create the webhook subscription in Telegram
-async function createTelegramWebhookSubscription(
+// Helper function to create the webhook subscription in Webflow
+async function createWebflowWebhookSubscription(
   request: NextRequest,
   userId: string,
   webhookData: any,
@@ -535,85 +577,127 @@ async function createTelegramWebhookSubscription(
 ) {
   try {
     const { path, providerConfig } = webhookData
-    const { botToken } = providerConfig || {}
+    const { siteId, triggerId, collectionId, formId } = providerConfig || {}
 
-    if (!botToken) {
-      logger.warn(`[${requestId}] Missing botToken for Telegram webhook creation.`, {
+    if (!siteId) {
+      logger.warn(`[${requestId}] Missing siteId for Webflow webhook creation.`, {
         webhookId: webhookData.id,
       })
-      return // Cannot proceed without botToken
+      throw new Error('Site ID is required to create Webflow webhook')
     }
 
-    if (!env.NEXT_PUBLIC_APP_URL) {
-      logger.error(
-        `[${requestId}] NEXT_PUBLIC_APP_URL not configured, cannot register Telegram webhook`
+    if (!triggerId) {
+      logger.warn(`[${requestId}] Missing triggerId for Webflow webhook creation.`, {
+        webhookId: webhookData.id,
+      })
+      throw new Error('Trigger type is required to create Webflow webhook')
+    }
+
+    const accessToken = await getOAuthToken(userId, 'webflow')
+    if (!accessToken) {
+      logger.warn(
+        `[${requestId}] Could not retrieve Webflow access token for user ${userId}. Cannot create webhook in Webflow.`
       )
-      throw new Error('NEXT_PUBLIC_APP_URL must be configured for Telegram webhook registration')
+      throw new Error(
+        'Webflow account connection required. Please connect your Webflow account in the trigger configuration and try again.'
+      )
     }
 
-    const notificationUrl = `${env.NEXT_PUBLIC_APP_URL}/api/webhooks/trigger/${path}`
+    const notificationUrl = `${getBaseUrl()}/api/webhooks/trigger/${path}`
 
-    const telegramApiUrl = `https://api.telegram.org/bot${botToken}/setWebhook`
+    // Map trigger IDs to Webflow trigger types
+    const triggerTypeMap: Record<string, string> = {
+      webflow_collection_item_created: 'collection_item_created',
+      webflow_collection_item_changed: 'collection_item_changed',
+      webflow_collection_item_deleted: 'collection_item_deleted',
+      webflow_form_submission: 'form_submission',
+    }
+
+    const webflowTriggerType = triggerTypeMap[triggerId]
+    if (!webflowTriggerType) {
+      logger.warn(`[${requestId}] Invalid triggerId for Webflow: ${triggerId}`, {
+        webhookId: webhookData.id,
+      })
+      throw new Error(`Invalid Webflow trigger type: ${triggerId}`)
+    }
+
+    const webflowApiUrl = `https://api.webflow.com/v2/sites/${siteId}/webhooks`
 
     const requestBody: any = {
+      triggerType: webflowTriggerType,
       url: notificationUrl,
-      allowed_updates: ['message'],
     }
 
-    // Configure user-agent header to ensure Telegram can identify itself to our middleware
-    const telegramResponse = await fetch(telegramApiUrl, {
+    // Add filter for collection-based triggers
+    if (collectionId && webflowTriggerType.startsWith('collection_item_')) {
+      requestBody.filter = {
+        resource_type: 'collection',
+        resource_id: collectionId,
+      }
+    }
+
+    // Add filter for form submissions
+    if (formId && webflowTriggerType === 'form_submission') {
+      requestBody.filter = {
+        resource_type: 'form',
+        resource_id: formId,
+      }
+    }
+
+    const webflowResponse = await fetch(webflowApiUrl, {
       method: 'POST',
       headers: {
+        Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
-        'User-Agent': 'TelegramBot/1.0',
+        accept: 'application/json',
       },
       body: JSON.stringify(requestBody),
     })
 
-    const responseBody = await telegramResponse.json()
-    if (!telegramResponse.ok || !responseBody.ok) {
-      const errorMessage =
-        responseBody.description ||
-        `Failed to create Telegram webhook. Status: ${telegramResponse.status}`
-      logger.error(`[${requestId}] ${errorMessage}`, {
-        response: responseBody,
-      })
+    const responseBody = await webflowResponse.json()
+
+    if (!webflowResponse.ok || responseBody.error) {
+      const errorMessage = responseBody.message || responseBody.error || 'Unknown Webflow API error'
+      logger.error(
+        `[${requestId}] Failed to create webhook in Webflow for webhook ${webhookData.id}. Status: ${webflowResponse.status}`,
+        { message: errorMessage, response: responseBody }
+      )
       throw new Error(errorMessage)
     }
 
     logger.info(
-      `[${requestId}] Successfully created Telegram webhook for webhook ${webhookData.id}.`
+      `[${requestId}] Successfully created webhook in Webflow for webhook ${webhookData.id}.`,
+      {
+        webflowWebhookId: responseBody.id || responseBody._id,
+      }
     )
 
-    // Get webhook info to ensure it's properly set up
+    // Store the Webflow webhook ID in the providerConfig
     try {
-      const webhookInfoUrl = `https://api.telegram.org/bot${botToken}/getWebhookInfo`
-      const webhookInfo = await fetch(webhookInfoUrl, {
-        headers: {
-          'User-Agent': 'TelegramBot/1.0',
-        },
-      })
-      const webhookInfoJson = await webhookInfo.json()
-
-      if (webhookInfoJson.ok) {
-        logger.info(`[${requestId}] Telegram webhook info:`, {
-          url: webhookInfoJson.result.url,
-          has_custom_certificate: webhookInfoJson.result.has_custom_certificate,
-          pending_update_count: webhookInfoJson.result.pending_update_count,
-          webhookId: webhookData.id,
-        })
+      const currentConfig = (webhookData.providerConfig as Record<string, any>) || {}
+      const updatedConfig = {
+        ...currentConfig,
+        externalId: responseBody.id || responseBody._id,
       }
-    } catch (error) {
-      // Non-critical error, just log
-      logger.warn(`[${requestId}] Failed to get webhook info`, error)
+      await db
+        .update(webhook)
+        .set({ providerConfig: updatedConfig, updatedAt: new Date() })
+        .where(eq(webhook.id, webhookData.id))
+    } catch (dbError: any) {
+      logger.error(
+        `[${requestId}] Failed to store externalId in providerConfig for webhook ${webhookData.id}.`,
+        dbError
+      )
+      // Even if saving fails, the webhook exists in Webflow. Log and continue.
     }
   } catch (error: any) {
     logger.error(
-      `[${requestId}] Exception during Telegram webhook creation for webhook ${webhookData.id}.`,
+      `[${requestId}] Exception during Webflow webhook creation for webhook ${webhookData.id}.`,
       {
         message: error.message,
         stack: error.stack,
       }
     )
+    throw error
   }
 }

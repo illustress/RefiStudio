@@ -16,18 +16,26 @@ export interface StreamingConfig {
 
 export interface StreamingResponseOptions {
   requestId: string
-  workflow: { id: string; userId: string; isDeployed?: boolean }
+  workflow: { id: string; userId: string; workspaceId?: string | null; isDeployed?: boolean }
   input: any
   executingUserId: string
   streamConfig: StreamingConfig
   createFilteredResult: (result: ExecutionResult) => any
+  executionId?: string
 }
 
 export async function createStreamingResponse(
   options: StreamingResponseOptions
 ): Promise<ReadableStream> {
-  const { requestId, workflow, input, executingUserId, streamConfig, createFilteredResult } =
-    options
+  const {
+    requestId,
+    workflow,
+    input,
+    executingUserId,
+    streamConfig,
+    createFilteredResult,
+    executionId,
+  } = options
 
   const { executeWorkflow, createFilteredResult: defaultFilteredResult } = await import(
     '@/app/api/workflows/[id]/execute/route'
@@ -39,6 +47,7 @@ export async function createStreamingResponse(
       try {
         const streamedContent = new Map<string, string>()
         const processedOutputs = new Set<string>()
+        const streamCompletionTimes = new Map<string, number>()
 
         const sendChunk = (blockId: string, content: string) => {
           const separator = processedOutputs.size > 0 ? '\n\n' : ''
@@ -58,7 +67,11 @@ export async function createStreamingResponse(
           try {
             while (true) {
               const { done, value } = await reader.read()
-              if (done) break
+              if (done) {
+                // Record when this stream completed
+                streamCompletionTimes.set(blockId, Date.now())
+                break
+              }
 
               const textChunk = decoder.decode(value, { stream: true })
               streamedContent.set(blockId, (streamedContent.get(blockId) || '') + textChunk)
@@ -97,7 +110,6 @@ export async function createStreamingResponse(
           for (const outputId of matchingOutputs) {
             const path = extractPathFromOutputId(outputId, blockId)
 
-            // Response blocks have their data nested under 'response'
             let outputValue = traverseObjectPath(output, path)
             if (outputValue === undefined && output.response) {
               outputValue = traverseObjectPath(output.response, path)
@@ -111,19 +123,36 @@ export async function createStreamingResponse(
           }
         }
 
-        const result = await executeWorkflow(workflow, requestId, input, executingUserId, {
-          enabled: true,
-          selectedOutputs: streamConfig.selectedOutputs,
-          isSecureMode: streamConfig.isSecureMode,
-          workflowTriggerType: streamConfig.workflowTriggerType,
-          onStream: onStreamCallback,
-          onBlockComplete: onBlockCompleteCallback,
-        })
+        const result = await executeWorkflow(
+          workflow,
+          requestId,
+          input,
+          executingUserId,
+          {
+            enabled: true,
+            selectedOutputs: streamConfig.selectedOutputs,
+            isSecureMode: streamConfig.isSecureMode,
+            workflowTriggerType: streamConfig.workflowTriggerType,
+            onStream: onStreamCallback,
+            onBlockComplete: onBlockCompleteCallback,
+            skipLoggingComplete: true, // We'll complete logging after tokenization
+          },
+          executionId
+        )
 
         if (result.logs && streamedContent.size > 0) {
           result.logs = result.logs.map((log: any) => {
             if (streamedContent.has(log.blockId)) {
               const content = streamedContent.get(log.blockId)
+
+              // Update timing to reflect actual stream completion
+              if (streamCompletionTimes.has(log.blockId)) {
+                const completionTime = streamCompletionTimes.get(log.blockId)!
+                const startTime = new Date(log.startedAt).getTime()
+                log.endedAt = new Date(completionTime).toISOString()
+                log.durationMs = completionTime - startTime
+              }
+
               if (log.output && content) {
                 return { ...log, output: { ...log.output, content } }
               }
@@ -135,6 +164,22 @@ export async function createStreamingResponse(
           processStreamingBlockLogs(result.logs, streamedContent)
         }
 
+        // Complete the logging session with updated trace spans that include cost data
+        if (result._streamingMetadata?.loggingSession) {
+          const { buildTraceSpans } = await import('@/lib/logs/execution/trace-spans/trace-spans')
+          const { traceSpans, totalDuration } = buildTraceSpans(result)
+
+          await result._streamingMetadata.loggingSession.safeComplete({
+            endedAt: new Date().toISOString(),
+            totalDurationMs: totalDuration || 0,
+            finalOutput: result.output || {},
+            traceSpans: (traceSpans || []) as any,
+            workflowInput: result._streamingMetadata.processedInput,
+          })
+
+          result._streamingMetadata = undefined
+        }
+
         // Create a minimal result with only selected outputs
         const minimalResult = {
           success: result.success,
@@ -142,7 +187,6 @@ export async function createStreamingResponse(
           output: {} as any,
         }
 
-        // If there are selected outputs, only include those specific fields
         if (streamConfig.selectedOutputs?.length && result.output) {
           const { extractBlockIdFromOutputId, extractPathFromOutputId, traverseObjectPath } =
             await import('@/lib/response-format')
@@ -151,19 +195,28 @@ export async function createStreamingResponse(
             const blockId = extractBlockIdFromOutputId(outputId)
             const path = extractPathFromOutputId(outputId, blockId)
 
-            // Find the output value from the result
             if (result.logs) {
               const blockLog = result.logs.find((log: any) => log.blockId === blockId)
               if (blockLog?.output) {
-                // Response blocks have their data nested under 'response'
                 let value = traverseObjectPath(blockLog.output, path)
                 if (value === undefined && blockLog.output.response) {
                   value = traverseObjectPath(blockLog.output.response, path)
                 }
                 if (value !== undefined) {
-                  // Store it in a structured way
+                  const dangerousKeys = ['__proto__', 'constructor', 'prototype']
+                  if (dangerousKeys.includes(blockId) || dangerousKeys.includes(path)) {
+                    logger.warn(
+                      `[${requestId}] Blocked potentially dangerous property assignment`,
+                      {
+                        blockId,
+                        path,
+                      }
+                    )
+                    continue
+                  }
+
                   if (!minimalResult.output[blockId]) {
-                    minimalResult.output[blockId] = {}
+                    minimalResult.output[blockId] = Object.create(null)
                   }
                   minimalResult.output[blockId][path] = value
                 }
@@ -171,7 +224,6 @@ export async function createStreamingResponse(
             }
           }
         } else if (!streamConfig.selectedOutputs?.length) {
-          // No selected outputs means include the full output (but still filtered)
           minimalResult.output = result.output
         }
 
