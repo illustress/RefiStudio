@@ -17,9 +17,9 @@ Fetches Instagram post data using the Instagram Graph API and generates explanat
 
 If Instagram Graph API is not available, you can use these alternative tools:
 
-### Option 1: Browser Use (Recommended for JavaScript-heavy pages)
+### Option 1: Browser Use (Requires Instagram Login)
 
-Use the `browser_use_run_task` tool to navigate to Instagram and extract content:
+Use the `browser_use_run_task` tool to navigate to Instagram and extract content. **Note: Instagram requires login, so you must provide credentials.**
 
 ```typescript
 {
@@ -27,8 +27,19 @@ Use the `browser_use_run_task` tool to navigate to Instagram and extract content
   params: {
     task: "Navigate to https://www.instagram.com/p/DQbuQqZDRUB/ and extract the post caption, username, likes, comments, hashtags, and mentions. Return as JSON.",
     apiKey: "your-browser-use-api-key",
-    model: "gpt-4o"
+    model: "gpt-4o",
+    variables: {
+      "INSTAGRAM_USERNAME": "your-username",
+      "INSTAGRAM_PASSWORD": "your-password"
+    }
   }
+}
+```
+
+**Important**: The task should include login instructions:
+```typescript
+{
+  task: "First, go to https://www.instagram.com/accounts/login/ and log in using the INSTAGRAM_USERNAME and INSTAGRAM_PASSWORD variables. Then navigate to https://www.instagram.com/p/DQbuQqZDRUB/ and extract: caption, username, likes, comments, hashtags, mentions. Return as JSON."
 }
 ```
 
@@ -79,13 +90,17 @@ To explain the Instagram post `DQbuQqZDRUB`:
    }
    ```
 
-2. **Using Browser Use** (fallback):
+2. **Using Browser Use** (requires login):
    ```typescript
    {
      tool: "browser_use_run_task",
      params: {
-       task: "Go to https://www.instagram.com/p/DQbuQqZDRUB/ and extract: caption, username, engagement metrics, hashtags, mentions. Format as JSON.",
-       apiKey: "your-api-key"
+       task: "First log in to Instagram at https://www.instagram.com/accounts/login/ using INSTAGRAM_USERNAME and INSTAGRAM_PASSWORD. Then go to https://www.instagram.com/p/DQbuQqZDRUB/ and extract: caption, username, engagement metrics, hashtags, mentions. Format as JSON.",
+       apiKey: "your-api-key",
+       variables: {
+         "INSTAGRAM_USERNAME": "your-username",
+         "INSTAGRAM_PASSWORD": "your-password"
+       }
      }
    }
    ```
