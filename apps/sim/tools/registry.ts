@@ -152,6 +152,7 @@ import {
   wikipediaSearchTool,
 } from '@/tools/wikipedia'
 import { workflowExecutorTool } from '@/tools/workflow'
+import { instagramReadTool } from '@/tools/instagram'
 import { xReadTool, xSearchTool, xUserTool, xWriteTool } from '@/tools/x'
 import { youtubeSearchTool } from '@/tools/youtube'
 
@@ -210,6 +211,7 @@ export const tools: Record<string, ToolConfig> = {
   x_read: xReadTool,
   x_search: xSearchTool,
   x_user: xUserTool,
+  instagram_read: instagramReadTool,
   pinecone_fetch: pineconeFetchTool,
   pinecone_generate_embeddings: pineconeGenerateEmbeddingsTool,
   pinecone_search_text: pineconeSearchTextTool,
