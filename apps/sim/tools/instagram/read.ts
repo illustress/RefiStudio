@@ -55,6 +55,8 @@ export const instagramReadTool: ToolConfig<InstagramReadParams, InstagramReadRes
       // Step 2: Handle both media ID and shortcode formats
       // If it's a shortcode (like DQbuQqZDRUB), we may need to convert it
       // Instagram Graph API uses numeric IDs, but we can try shortcode first
+      // Note: For shortcodes, you may need to use Instagram Basic Display API or
+      // convert shortcode to media ID first using: https://api.instagram.com/oembed/?url=https://www.instagram.com/p/{shortcode}/
       const mediaId = params.mediaId
 
       return `https://graph.instagram.com/${mediaId}?fields=${fields}&access_token=${params.accessToken}`
