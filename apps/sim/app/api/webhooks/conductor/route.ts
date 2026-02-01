@@ -30,22 +30,21 @@ export async function POST(request: NextRequest) {
   const requestId = generateRequestId()
   
   try {
-    // Verify webhook secret (required by default)
+    // Verify webhook secret (ALWAYS required for security)
     const authHeader = request.headers.get('authorization')
     const expectedSecret = process.env.CONDUCTOR_WEBHOOK_SECRET
     
-    // If secret is not set, reject in production, allow in development with warning
+    // STRICT: Secret must be set and must match
     if (!expectedSecret) {
-      if (process.env.NODE_ENV === 'production') {
-        logger.error(`[${requestId}] CONDUCTOR_WEBHOOK_SECRET not set in production`)
-        return NextResponse.json(
-          { error: 'Server configuration error' },
-          { status: 500 }
-        )
-      }
-      logger.warn(`[${requestId}] CONDUCTOR_WEBHOOK_SECRET not set - allowing in development only`)
-    } else if (authHeader !== `Bearer ${expectedSecret}`) {
-      logger.warn(`[${requestId}] Unauthorized webhook attempt`)
+      logger.error(`[${requestId}] CONDUCTOR_WEBHOOK_SECRET not configured`)
+      return NextResponse.json(
+        { error: 'Server configuration error' },
+        { status: 500 }
+      )
+    }
+    
+    if (authHeader !== `Bearer ${expectedSecret}`) {
+      logger.warn(`[${requestId}] Unauthorized webhook attempt - invalid or missing bearer token`)
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }

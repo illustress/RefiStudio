@@ -7,59 +7,6 @@ import type { ToolConfig } from '@/tools/types'
  * browser automation actions in Slack.
  */
 
-async function pollForSignal(
-  conductorUrl: string,
-  threadTs: string,
-  apiKey: string,
-  maxWaitMinutes: number,
-  pollIntervalSeconds: number
-): Promise<{ completed: boolean; signal?: string; elapsedMinutes: number }> {
-  const startTime = Date.now()
-  const maxWaitMs = maxWaitMinutes * 60 * 1000
-  const pollIntervalMs = pollIntervalSeconds * 1000
-  
-  while (Date.now() - startTime < maxWaitMs) {
-    // Wait before polling
-    await new Promise(resolve => setTimeout(resolve, pollIntervalMs))
-    
-    try {
-      const response = await fetch(
-        `${conductorUrl}/api/wait_for_signal/${threadTs}/result`,
-        {
-          headers: {
-            'X-API-Key': apiKey,
-          },
-        }
-      )
-      
-      if (!response.ok) continue
-      
-      const data = await response.json()
-      
-      if (data.completed) {
-        return {
-          completed: true,
-          signal: data.completionSignal,
-          elapsedMinutes: data.elapsedMinutes || Math.round((Date.now() - startTime) / 60000)
-        }
-      }
-      
-      // If status is error, stop polling
-      if (data.status === 'error') {
-        throw new Error('Signal polling stopped due to error status')
-      }
-    } catch (error) {
-      // Continue polling on error
-    }
-  }
-  
-  // Timed out
-  return {
-    completed: false,
-    elapsedMinutes: Math.round((Date.now() - startTime) / 60000)
-  }
-}
-
 export const conductorSlackActorTool: ToolConfig<any, any> = {
   id: 'conductor_slack_actor',
   name: 'Conductor Slack Actor',
@@ -210,36 +157,18 @@ export const conductorSlackActorTool: ToolConfig<any, any> = {
     },
   },
 
-  transformResponse: async (response, params) => {
+  transformResponse: async (response) => {
     const data = await response.json()
     
     if (!response.ok) {
       throw new Error(data.error || `Conductor error: ${response.status}`)
     }
     
-    // For wait_for_signal, we need to poll for results
-    if (params.action === 'wait_for_signal' && data.status === 'polling') {
-      const pollResult = await pollForSignal(
-        params.conductorUrl,
-        params.threadTs,
-        params.apiKey || process.env.CONDUCTOR_API_KEY || '',
-        params.maxWaitMinutes || 30,
-        params.pollIntervalSeconds || 30
-      )
-      
-      return {
-        success: pollResult.completed,
-        output: {
-          completed: pollResult.completed,
-          completionSignal: pollResult.signal,
-          elapsedMinutes: pollResult.elapsedMinutes,
-          timedOut: !pollResult.completed,
-        },
-      }
-    }
+    // For wait_for_signal, the server now waits synchronously and returns the final result
+    // No additional polling needed - the HTTP connection stays open until complete
     
     return {
-      success: true,
+      success: data.success ?? true,
       output: data,
     }
   },
@@ -263,11 +192,19 @@ export const conductorSlackActorTool: ToolConfig<any, any> = {
     },
     completionSignal: {
       type: 'string',
-      description: 'Detected completion signal',
+      description: 'Detected completion signal (for wait_for_signal)',
     },
     elapsedMinutes: {
       type: 'number',
-      description: 'Elapsed time in minutes',
+      description: 'Elapsed time in minutes (for wait_for_signal)',
+    },
+    completed: {
+      type: 'boolean',
+      description: 'Whether wait_for_signal completed successfully',
+    },
+    timedOut: {
+      type: 'boolean',
+      description: 'Whether wait_for_signal timed out',
     },
     threadStatus: {
       type: 'string',
@@ -280,14 +217,6 @@ export const conductorSlackActorTool: ToolConfig<any, any> = {
     lastActivity: {
       type: 'string',
       description: 'Last activity timestamp',
-    },
-    completed: {
-      type: 'boolean',
-      description: 'Whether wait_for_signal completed successfully',
-    },
-    timedOut: {
-      type: 'boolean',
-      description: 'Whether wait_for_signal timed out',
     },
   },
 }

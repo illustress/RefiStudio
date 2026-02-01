@@ -2,9 +2,6 @@ services:
   app:
     networks:
       - default
-    sysctls:
-      fs.inotify.max_user_watches: "524288"
-      fs.inotify.max_user_instances: "512"
     build:
       context: ..
       dockerfile: .devcontainer/Dockerfile
@@ -28,6 +25,7 @@ services:
       - OLLAMA_URL=${OLLAMA_URL:-http://localhost:11434}
       - NEXT_PUBLIC_SOCKET_URL=${NEXT_PUBLIC_SOCKET_URL:-http://localhost:3002}
       - BUN_INSTALL_CACHE_DIR=/home/bun/.bun/cache
+      - TMPDIR=/home/bun/.bun/tmp
     depends_on:
       db:
         condition: service_healthy
@@ -41,9 +39,6 @@ services:
   realtime:
     networks:
       - default
-    sysctls:
-      fs.inotify.max_user_watches: "524288"
-      fs.inotify.max_user_instances: "512"
     build:
       context: ..
       dockerfile: .devcontainer/Dockerfile
@@ -61,6 +56,7 @@ services:
       - BETTER_AUTH_URL=http://localhost:3000
       - NEXT_PUBLIC_APP_URL=http://localhost:3000
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-your_auth_secret_here}
+      - TMPDIR=/home/bun/.bun/tmp
     depends_on:
       db:
         condition: service_healthy

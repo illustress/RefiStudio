@@ -3,6 +3,18 @@
 # Exit on error, but with some error handling
 set -e
 
+# Use workspace temp dir for Bun (avoids "unable to write files to tempdir: AccessDenied" in containers)
+export TMPDIR="${TMPDIR:-/workspace/.tmp}"
+export TEMP="$TMPDIR"
+export TMP="$TMPDIR"
+mkdir -p "$TMPDIR"
+if ! touch "$TMPDIR/.write-test" 2>/dev/null; then
+  echo "Cannot write to TMPDIR=$TMPDIR — checking /workspace permissions..."
+  ls -la /workspace 2>/dev/null || true
+  exit 1
+fi
+rm -f "$TMPDIR/.write-test"
+
 echo "🔧 Setting up Sim development environment..."
 
 # Change to the workspace root directory
@@ -10,7 +22,7 @@ cd /workspace
 
 # Install global packages for development (done at runtime, not build time)
 echo "📦 Installing global development tools..."
-bun install -g turbo drizzle-kit typescript @types/node 2>/dev/null || {
+env TMPDIR="$TMPDIR" TEMP="$TMPDIR" TMP="$TMPDIR" bun install -g turbo drizzle-kit typescript @types/node 2>/dev/null || {
   echo "⚠️ Some global packages may already be installed, continuing..."
 }
 
@@ -61,7 +73,7 @@ chmod 700 ~/.bun ~/.bun/cache 2>/dev/null || true
 
 # Install dependencies with platform-specific binaries
 echo "Installing dependencies with Bun..."
-bun install
+env TMPDIR="$TMPDIR" TEMP="$TMPDIR" TMP="$TMPDIR" bun install
 
 # Check for native dependencies
 echo "Checking for native dependencies compatibility..."

@@ -3,6 +3,12 @@
 # Source this file to add project-specific commands to your shell
 # Add to your ~/.bashrc or ~/.zshrc: source /workspace/.devcontainer/sim-commands.sh
 
+# Writable temp dir for Bun in devcontainer (avoids "unable to write files to tempdir: AccessDenied")
+export TMPDIR="${TMPDIR:-/workspace/.tmp}"
+export TEMP="$TMPDIR"
+export TMP="$TMPDIR"
+mkdir -p "$TMPDIR" 2>/dev/null || true
+
 # Project-specific aliases for Sim development
 alias sim-start="cd /workspace && bun run dev:full"
 alias sim-app="cd /workspace && bun run dev"
