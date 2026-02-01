@@ -1,5 +1,6 @@
 import { sso } from '@better-auth/sso'
 import { stripe } from '@better-auth/stripe'
+import { siwe } from '@better-auth/siwe'
 import { db } from '@sim/db'
 import * as schema from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
@@ -16,7 +17,9 @@ import {
 } from 'better-auth/plugins'
 import { and, eq } from 'drizzle-orm'
 import { headers } from 'next/headers'
+import { nanoid } from 'nanoid'
 import Stripe from 'stripe'
+import type { Address } from 'viem'
 import {
   getEmailSubject,
   renderOTPEmail,
@@ -58,6 +61,11 @@ import { getBaseUrl } from '@/lib/core/utils/urls'
 import { sendEmail } from '@/lib/messaging/email/mailer'
 import { getFromEmailAddress, getPersonalEmailFrom } from '@/lib/messaging/email/utils'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
+import {
+  getTierLimits,
+  verifyNonFungibleTokenOwnership,
+} from '@/lib/pulsechain/nft-verification'
+import type { NonFungibleTokenOwnershipResult } from '@/lib/pulsechain/nft-verification'
 import { syncAllWebhooksForCredentialSet } from '@/lib/webhooks/utils.server'
 import { createAnonymousSession, ensureAnonymousUserExists } from './anonymous'
 import { SSO_TRUSTED_PROVIDERS } from './sso/constants'
@@ -72,6 +80,169 @@ let stripeClient = null
 if (validStripeKey) {
   stripeClient = new Stripe(env.STRIPE_SECRET_KEY || '', {
     apiVersion: '2025-08-27.basil',
+  })
+}
+
+const pulseChainDomain = env.NEXT_PUBLIC_APP_URL
+  ? new URL(env.NEXT_PUBLIC_APP_URL).host
+  : 'localhost:3000'
+
+const pulseChainChainIdentifier = 369
+
+interface NonFungibleTokenAccessUpdateContext {
+  userId: string
+  walletAddress: Address
+  ownershipResult: NonFungibleTokenOwnershipResult
+}
+
+/**
+ * This function creates or updates a non-fungible token access record.
+ */
+async function upsertNonFungibleTokenAccessRecord(
+  context: NonFungibleTokenAccessUpdateContext
+) {
+  /**
+   * Step 1: Load any existing access record for the wallet address.
+   */
+  const existingAccess = await db.query.userNftAccess.findFirst({
+    where: eq(schema.userNftAccess.walletAddress, context.walletAddress),
+  })
+
+  if (existingAccess && existingAccess.userId !== context.userId) {
+    /**
+     * Step 1a: Guard against wallet reuse across different user records.
+     */
+    logger.error('Wallet address is already associated with another user', {
+      walletAddress: context.walletAddress,
+      userId: context.userId,
+      existingUserId: existingAccess.userId,
+    })
+    return
+  }
+
+  /**
+   * Step 2: Build metadata and limits for the current verification.
+   */
+  const verificationTimestamp = new Date().toISOString()
+  const verificationCount =
+    (existingAccess?.metadata?.verificationCount ?? 0) + 1
+  const updatedMetadata = {
+    verifiedAt: verificationTimestamp,
+    lastCheckedAt: verificationTimestamp,
+    tokenUniformResourceIdentifier:
+      context.ownershipResult.tokenMetadata?.tokenUniformResourceIdentifier,
+    verificationCount,
+  }
+  const resourceLimits = getTierLimits(context.ownershipResult.tier)
+
+  if (existingAccess) {
+    /**
+     * Step 3: Update the existing access record and track tier changes.
+     */
+    await db
+      .update(schema.userNftAccess)
+      .set({
+        tokenId: context.ownershipResult.tokenIdentifier,
+        tier: context.ownershipResult.tier,
+        status: 'verified',
+        metadata: updatedMetadata,
+        resourceLimits,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.userNftAccess.id, existingAccess.id))
+
+    if (existingAccess.tier !== context.ownershipResult.tier) {
+      await db.insert(schema.userNftHistory).values({
+        id: nanoid(),
+        userId: existingAccess.userId,
+        event: 'tier_changed',
+        previousTier: existingAccess.tier,
+        newTier: context.ownershipResult.tier,
+        newTokenId: context.ownershipResult.tokenIdentifier,
+        createdAt: new Date(),
+      })
+    }
+
+    return
+  }
+
+  /**
+   * Step 4: Create an access record and history entry for first-time verification.
+   */
+  await db.insert(schema.userNftAccess).values({
+    id: nanoid(),
+    userId: context.userId,
+    walletAddress: context.walletAddress,
+    tokenId: context.ownershipResult.tokenIdentifier,
+    tier: context.ownershipResult.tier,
+    status: 'verified',
+    metadata: updatedMetadata,
+    resourceLimits,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  })
+
+  await db.insert(schema.userNftHistory).values({
+    id: nanoid(),
+    userId: context.userId,
+    event: 'verified',
+    newTokenId: context.ownershipResult.tokenIdentifier,
+    newTier: context.ownershipResult.tier,
+    createdAt: new Date(),
+  })
+}
+
+/**
+ * This function syncs NFT access data after a SIWE session is created.
+ */
+async function syncNonFungibleTokenAccessForSession(session: { userId: string }) {
+  /**
+   * Step 1: Confirm this session originated from a SIWE account.
+   */
+  const accountRecord = await db.query.account.findFirst({
+    where: and(
+      eq(schema.account.userId, session.userId),
+      eq(schema.account.providerId, 'siwe')
+    ),
+  })
+
+  if (!accountRecord) {
+    return
+  }
+
+  /**
+   * Step 2: Resolve a valid wallet address for verification.
+   */
+  const walletAddressCandidate = accountRecord.accountId
+  const walletAddress =
+    walletAddressCandidate.startsWith('0x') ? walletAddressCandidate : session.userId
+
+  if (!walletAddress.startsWith('0x')) {
+    logger.warn('SIWE session missing a valid wallet address', {
+      userId: session.userId,
+    })
+    return
+  }
+
+  /**
+   * Step 3: Verify ownership and upsert access records.
+   */
+  const ownershipResult = await verifyNonFungibleTokenOwnership(
+    walletAddress as Address
+  )
+
+  if (!ownershipResult.hasNonFungibleToken || !ownershipResult.isOwner) {
+    logger.warn('SIWE verification failed after session creation', {
+      userId: session.userId,
+      walletAddress,
+    })
+    return
+  }
+
+  await upsertNonFungibleTokenAccessRecord({
+    userId: session.userId,
+    walletAddress: walletAddress as Address,
+    ownershipResult,
   })
 }
 
@@ -403,6 +574,19 @@ export const auth = betterAuth({
             return { data: session }
           }
         },
+        after: async (session) => {
+          /**
+           * Step 1: Sync non-fungible token access for eligible SIWE sessions.
+           */
+          try {
+            await syncNonFungibleTokenAccessForSession(session)
+          } catch (error) {
+            logger.error('Failed to sync non-fungible token access after session creation', {
+              error,
+              userId: session.userId,
+            })
+          }
+        },
       },
     },
   },
@@ -571,6 +755,58 @@ export const auth = betterAuth({
   },
   plugins: [
     nextCookies(),
+    siwe({
+      domain: pulseChainDomain,
+      statement:
+        'Sign in to Sim Studio on PulseChain. Non-fungible token ownership required for access.',
+      chainId: pulseChainChainIdentifier,
+      async verifyMessage({ address }) {
+        /**
+         * Step 1: Validate the wallet address provided by the SIWE payload.
+         */
+        if (!address || !address.startsWith('0x')) {
+          logger.warn('SIWE verification failed due to missing wallet address')
+          throw new Error('NON_FUNGIBLE_TOKEN_VERIFICATION_FAILED')
+        }
+
+        /**
+         * Step 2: Verify non-fungible token ownership on PulseChain.
+         */
+        const ownershipResult = await verifyNonFungibleTokenOwnership(address as Address)
+
+        if (!ownershipResult.hasNonFungibleToken || !ownershipResult.isOwner) {
+          logger.warn('SIWE access denied for non-holder wallet', {
+            walletAddress: address,
+          })
+
+          const accessError = Object.assign(
+            new Error('Non-fungible token ownership required'),
+            {
+              code: 'NO_NFT_PULSECHAIN',
+              details: {
+                contract: process.env.NFT_CONTRACT_ADDRESS,
+                chain: 'PulseChain (369)',
+                chainId: pulseChainChainIdentifier,
+                address,
+              },
+            }
+          )
+
+          throw accessError
+        }
+
+        /**
+         * Step 3: Log verification success and allow the sign-in.
+         */
+        logger.info('SIWE non-fungible token verified', {
+          walletAddress: address,
+          tier: ownershipResult.tier,
+          tokenIdentifier: ownershipResult.tokenIdentifier,
+        })
+
+        return true
+      },
+    }),
     oneTimeToken({
       expiresIn: 24 * 60 * 60, // 24 hours - Socket.IO handles connection persistence with heartbeats
     }),

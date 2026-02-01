@@ -572,6 +572,20 @@ export const notificationDeliveryStatusEnum = pgEnum('notification_delivery_stat
   'failed',
 ])
 
+export const nftAccessStatusEnum = pgEnum('nft_access_status', [
+  'pending',
+  'verified',
+  'expired',
+  'revoked',
+])
+
+export const nftTierEnum = pgEnum('nft_tier', [
+  'none',
+  'standard',
+  'premium',
+  'enterprise',
+])
+
 export const workspaceNotificationSubscription = pgTable(
   'workspace_notification_subscription',
   {
@@ -720,6 +734,107 @@ export const userStats = pgTable('user_stats', {
   billingBlocked: boolean('billing_blocked').notNull().default(false),
   billingBlockedReason: billingBlockedReasonEnum('billing_blocked_reason'),
 })
+
+export const userNftAccess = pgTable(
+  'user_nft_access',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' })
+      .unique(),
+    walletAddress: text('wallet_address', { length: 42 }).notNull().unique(),
+    tokenId: bigint('token_id', { mode: 'number' }),
+    tier: nftTierEnum('tier').notNull().default('none'),
+    status: nftAccessStatusEnum('status').notNull().default('pending'),
+    metadata: jsonb('metadata')
+      .$type<{
+        verifiedAt: string
+        lastCheckedAt: string
+        tokenUniformResourceIdentifier?: string
+        verificationCount: number
+      }>()
+      .notNull()
+      .default(
+        sql`jsonb_build_object(
+          'verifiedAt',
+          to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+          'lastCheckedAt',
+          to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+          'verificationCount',
+          0
+        )`
+      ),
+    resourceLimits: jsonb('resource_limits')
+      .$type<{
+        maxWorkflows: number
+        maxWorkspaces: number
+        maxApiCalls: number
+        maxStorageMB: number
+        maxAgents: number
+        maxSchedules: number
+        maxWebhooks: number
+      }>()
+      .notNull()
+      .default(
+        sql`jsonb_build_object(
+          'maxWorkflows', 0,
+          'maxWorkspaces', 0,
+          'maxApiCalls', 0,
+          'maxStorageMB', 0,
+          'maxAgents', 0,
+          'maxSchedules', 0,
+          'maxWebhooks', 0
+        )`
+      ),
+    currentUsage: jsonb('current_usage')
+      .$type<{
+        apiCallsThisMonth: number
+        storageUsedMB: number
+        lastResetAt: string
+      }>()
+      .notNull()
+      .default(
+        sql`jsonb_build_object(
+          'apiCallsThisMonth', 0,
+          'storageUsedMB', 0,
+          'lastResetAt',
+          to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+        )`
+      ),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdx: index('user_nft_user_idx').on(table.userId),
+    walletIdx: index('user_nft_wallet_idx').on(table.walletAddress),
+    tierIdx: index('user_nft_tier_idx').on(table.tier),
+    statusIdx: index('user_nft_status_idx').on(table.status),
+  })
+)
+
+export const userNftHistory = pgTable(
+  'user_nft_history',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    event: text('event').notNull(),
+    previousTokenId: bigint('previous_token_id', { mode: 'number' }),
+    newTokenId: bigint('new_token_id', { mode: 'number' }),
+    previousTier: nftTierEnum('previous_tier'),
+    newTier: nftTierEnum('new_tier'),
+    transactionHash: text('transaction_hash'),
+    blockNumber: bigint('block_number', { mode: 'number' }),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdx: index('nft_history_user_idx').on(table.userId),
+    eventIdx: index('nft_history_event_idx').on(table.event),
+  })
+)
 
 export const customTools = pgTable(
   'custom_tools',
