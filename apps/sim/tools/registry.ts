@@ -1,3 +1,4 @@
+import { conductorSlackActorTool } from '@/tools/conductor'
 import {
   a2aCancelTaskTool,
   a2aDeletePushNotificationTool,
@@ -2680,6 +2681,7 @@ export const tools: Record<string, ToolConfig> = {
   clerk_list_organizations: clerkListOrganizationsTool,
   clerk_get_organization: clerkGetOrganizationTool,
   clerk_create_organization: clerkCreateOrganizationTool,
+  conductor_slack_actor: conductorSlackActorTool,
   clerk_list_sessions: clerkListSessionsTool,
   clerk_get_session: clerkGetSessionTool,
   clerk_revoke_session: clerkRevokeSessionTool,

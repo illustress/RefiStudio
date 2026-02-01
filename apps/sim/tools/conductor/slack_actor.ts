@@ -21,6 +21,12 @@ export const conductorSlackActorTool: ToolConfig<any, any> = {
       visibility: 'user-only',
       description: 'URL of the Conductor-USER service',
     },
+    apiKey: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description: 'API key for Conductor-USER authentication (optional if set in env)',
+    },
     action: {
       type: 'string',
       required: true,
@@ -114,6 +120,10 @@ export const conductorSlackActorTool: ToolConfig<any, any> = {
           return `${baseUrl}/api/slack/send-mention`
         case 'click_cursor_link':
           return `${baseUrl}/api/cursor/click-link`
+        case 'human_checkpoint':
+          return `${baseUrl}/api/human_checkpoint`
+        case 'wait_for_signal':
+          return `${baseUrl}/api/wait_for_signal`
         case 'get_status':
           return `${baseUrl}/api/thread/${params.threadTs}/status`
         default:
@@ -123,14 +133,28 @@ export const conductorSlackActorTool: ToolConfig<any, any> = {
     method: (params) => {
       return params.action === 'get_status' ? 'GET' : 'POST'
     },
-    headers: () => ({
+    headers: (params) => ({
       'Content-Type': 'application/json',
+      'X-API-Key': params.apiKey || process.env.CONDUCTOR_API_KEY || '',
     }),
     body: (params) => {
-      const { conductorUrl, action, ...rest } = params
-      return rest
+      const { conductorUrl, action, apiKey, channelId, threadTs, messageText, cursorLinkUrl, checkpointMessage, signalPatterns, ...rest } = params
+      
+      // Map camelCase keys to snake_case keys that Conductor-USER expects
+      const mappedParams: Record<string, any> = {
+        ...rest,
+        action,
+      }
+      
+      if (channelId !== undefined) mappedParams.channel = channelId
+      if (threadTs !== undefined) mappedParams.thread_ts = threadTs
+      if (messageText !== undefined) mappedParams.text = messageText
+      if (cursorLinkUrl !== undefined) mappedParams.linkUrl = cursorLinkUrl
+      if (checkpointMessage !== undefined) mappedParams.checkpointMessage = checkpointMessage
+      if (signalPatterns !== undefined) mappedParams.signalPatterns = signalPatterns
+      
+      return mappedParams
     },
-  },
 
   transformResponse: async (response) => {
     const data = await response.json()

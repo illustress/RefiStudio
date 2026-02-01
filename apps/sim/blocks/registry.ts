@@ -15,6 +15,7 @@ import { ChatTriggerBlock } from '@/blocks/blocks/chat_trigger'
 import { CirclebackBlock } from '@/blocks/blocks/circleback'
 import { ClayBlock } from '@/blocks/blocks/clay'
 import { ClerkBlock } from '@/blocks/blocks/clerk'
+import { ConductorBlock } from '@/blocks/blocks/conductor'
 import { ConditionBlock } from '@/blocks/blocks/condition'
 import { ConfluenceBlock, ConfluenceV2Block } from '@/blocks/blocks/confluence'
 import { CursorBlock, CursorV2Block } from '@/blocks/blocks/cursor'
@@ -175,6 +176,7 @@ export const registry: Record<string, BlockConfig> = {
   circleback: CirclebackBlock,
   clay: ClayBlock,
   clerk: ClerkBlock,
+  conductor: ConductorBlock,
   condition: ConditionBlock,
   confluence: ConfluenceBlock,
   confluence_v2: ConfluenceV2Block,

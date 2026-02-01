@@ -34,6 +34,15 @@ export const ConductorBlock: BlockConfig = {
       required: true,
       description: 'URL of the Conductor-USER service',
     },
+    {
+      id: 'apiKey',
+      title: 'API Key',
+      type: 'short-input',
+      placeholder: 'Optional - set via CONDUCTOR_API_KEY env var',
+      required: false,
+      password: true,
+      description: 'API key for Conductor-USER authentication',
+    },
 
     // Action selector
     {
@@ -190,22 +199,28 @@ Be direct and specific. Output only the message text.`,
       params: (params) => {
         const { conductorUrl, action, channelId, threadTs, ...rest } = params
 
-        const baseParams = {
+        const baseParams: Record<string, any> = {
           conductorUrl,
           action,
           channelId,
           threadTs,
         }
+        
+        if (rest.apiKey) baseParams.apiKey = rest.apiKey
 
         switch (action) {
           case 'send_mention': {
             const mention = rest.mentionTarget === 'custom' 
-              ? rest.customMention 
+              ? (rest.customMention || '@unknown')
               : rest.mentionTarget
+            
+            if (!mention || mention.trim() === '' || mention === '@unknown') {
+              throw new Error('Mention target is required. Please select a target or provide a custom mention.')
+            }
             
             return {
               ...baseParams,
-              mention,
+              mention: mention.trim(),
               messageText: rest.messageText,
               requireHumanConfirmation: rest.requireApproval === true,
             }
