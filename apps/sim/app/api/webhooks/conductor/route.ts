@@ -30,11 +30,21 @@ export async function POST(request: NextRequest) {
   const requestId = generateRequestId()
   
   try {
-    // Verify webhook secret
+    // Verify webhook secret (required by default)
     const authHeader = request.headers.get('authorization')
     const expectedSecret = process.env.CONDUCTOR_WEBHOOK_SECRET
     
-    if (expectedSecret && authHeader !== `Bearer ${expectedSecret}`) {
+    // If secret is not set, reject in production, allow in development with warning
+    if (!expectedSecret) {
+      if (process.env.NODE_ENV === 'production') {
+        logger.error(`[${requestId}] CONDUCTOR_WEBHOOK_SECRET not set in production`)
+        return NextResponse.json(
+          { error: 'Server configuration error' },
+          { status: 500 }
+        )
+      }
+      logger.warn(`[${requestId}] CONDUCTOR_WEBHOOK_SECRET not set - allowing in development only`)
+    } else if (authHeader !== `Bearer ${expectedSecret}`) {
       logger.warn(`[${requestId}] Unauthorized webhook attempt`)
       return NextResponse.json(
         { error: 'Unauthorized' },
