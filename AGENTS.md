@@ -111,6 +111,25 @@ bunx drizzle-kit studio                     # Open Drizzle Studio
 bunx drizzle-kit push                       # Push schema changes
 ```
 
+### Troubleshooting: "OS file watch limit reached" / "Module not found" in dev
+
+If you see "OS file watch limit reached" or spurious "Module not found" for paths under `node_modules` (e.g. `react`, `next-devtools/userspace/pages`), the system inotify limit is too low. Fix by raising limits:
+
+**On the host (bare metal / VM):**
+
+```bash
+# Temporary (until reboot)
+sudo sysctl fs.inotify.max_user_watches=524288
+sudo sysctl fs.inotify.max_user_instances=512
+
+# Persistent (Linux): create e.g. /etc/sysctl.d/99-inotify.conf
+echo "fs.inotify.max_user_watches=524288" | sudo tee -a /etc/sysctl.d/99-inotify.conf
+echo "fs.inotify.max_user_instances=512"   | sudo tee -a /etc/sysctl.d/99-inotify.conf
+sudo sysctl -p /etc/sysctl.d/99-inotify.conf
+```
+
+**In Docker:** pass sysctls when running the container, e.g. `--sysctl fs.inotify.max_user_watches=524288` or set in `docker-compose.yml` under the service: `sysctls: - fs.inotify.max_user_watches=524288`.
+
 ## Environment Variables
 
 Required environment variables for self-hosted deployments:

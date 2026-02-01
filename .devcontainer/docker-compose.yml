@@ -2,6 +2,9 @@ services:
   app:
     networks:
       - default
+    sysctls:
+      fs.inotify.max_user_watches: "524288"
+      fs.inotify.max_user_instances: "512"
     build:
       context: ..
       dockerfile: .devcontainer/Dockerfile
@@ -38,6 +41,9 @@ services:
   realtime:
     networks:
       - default
+    sysctls:
+      fs.inotify.max_user_watches: "524288"
+      fs.inotify.max_user_instances: "512"
     build:
       context: ..
       dockerfile: .devcontainer/Dockerfile
