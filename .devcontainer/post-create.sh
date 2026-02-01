@@ -55,9 +55,9 @@ if [ -d "node_modules" ]; then
   rm -rf apps/docs/node_modules
 fi
 
-# Ensure Bun cache directory exists and has correct permissions
+# Ensure Bun cache directory exists (chmod only if we own the dirs - may be root-owned in image)
 mkdir -p ~/.bun/cache
-chmod 700 ~/.bun ~/.bun/cache
+chmod 700 ~/.bun ~/.bun/cache 2>/dev/null || true
 
 # Install dependencies with platform-specific binaries
 echo "Installing dependencies with Bun..."
@@ -74,6 +74,10 @@ if [ ! -f "apps/sim/.env" ]; then
   echo "📄 Creating .env file from template..."
   if [ -f "apps/sim/.env.example" ]; then
     cp apps/sim/.env.example apps/sim/.env
+    # Use dev container database URL so the app can reach PostgreSQL
+    if command -v sed >/dev/null 2>&1; then
+      sed -i 's|^DATABASE_URL=.*|DATABASE_URL=postgresql://postgres:postgres@db:5432/simstudio|' apps/sim/.env 2>/dev/null || true
+    fi
   else
     echo "DATABASE_URL=postgresql://postgres:postgres@db:5432/simstudio" > apps/sim/.env
   fi

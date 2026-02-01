@@ -51,7 +51,7 @@ sim-start  # Runs both app and socket server using concurrently
 
 Services:
 - **App container** (8GB memory limit) - Main Next.js application
-- **Realtime container** (4GB memory limit) - Socket.io server for real-time features
+- **Realtime container** (1G memory limit) - Socket.io server for real-time features
 - **Database** - PostgreSQL with pgvector extension
 - **Migrations** - Runs automatically on container creation
 
